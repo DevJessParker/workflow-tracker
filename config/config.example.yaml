@@ -1,0 +1,79 @@
+# Workflow Tracker Configuration Example
+# Copy this to config/local.yaml and fill in your values
+
+# Repository to scan
+repository:
+  # Path to the repository (can be absolute or relative)
+  path: "/path/to/your/repo"
+  # Branch to scan (optional, defaults to current branch)
+  branch: "main"
+
+# Confluence integration
+confluence:
+  # Confluence Cloud URL (e.g., https://yourcompany.atlassian.net)
+  url: "https://your-domain.atlassian.net"
+  # Your email address
+  username: "your.email@company.com"
+  # API token (generate from https://id.atlassian.com/manage-profile/security/api-tokens)
+  api_token: "your-api-token-here"
+  # Personal space key (e.g., "~123456789abcdef" or your user ID)
+  # To find your personal space: Go to Confluence > Spaces > Personal
+  space_key: "~YOURUSERID"
+  # Parent page ID (optional - creates pages under this parent)
+  parent_page_id: null
+
+# Scanning options
+scanner:
+  # File extensions to scan
+  include_extensions:
+    - ".cs"      # C# files
+    - ".ts"      # TypeScript files
+    - ".js"      # JavaScript files
+    - ".sql"     # SQL files
+
+  # Directories to exclude from scanning
+  exclude_dirs:
+    - "node_modules"
+    - "bin"
+    - "obj"
+    - ".git"
+    - "dist"
+    - "build"
+
+  # Workflow patterns to detect
+  detect:
+    database: true       # Database operations (SQL, EF Core, etc.)
+    api_calls: true      # HTTP/REST API calls
+    file_io: true        # File read/write operations
+    message_queues: true # Message queue operations
+    data_transforms: true # Data mapping/transformation
+
+# Output options
+output:
+  # Directory for generated artifacts
+  directory: "./output"
+  # Formats to generate
+  formats:
+    - "html"     # Interactive HTML graph
+    - "png"      # Static PNG image
+    - "svg"      # SVG vector image
+    - "json"     # JSON data for programmatic access
+    - "markdown" # Markdown documentation
+
+# Visualization options
+visualization:
+  # Graph layout algorithm (dot, neato, fdp, sfdp, circo, twopi)
+  layout: "dot"
+  # Include source code snippets in nodes
+  include_code_snippets: true
+  # Maximum snippet length
+  max_snippet_length: 100
+  # Group nodes by file/module
+  group_by_module: true
+
+# CI/CD mode
+ci_mode:
+  # When true, runs headless and updates Confluence automatically
+  enabled: false
+  # Exit with error code if workflows changed
+  fail_on_changes: false

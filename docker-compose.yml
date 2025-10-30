@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  workflow-tracker:
+    build: .
+    container_name: workflow-tracker
+    volumes:
+      # Mount the repository to scan
+      - ${REPO_TO_SCAN:-./}:/repo:ro
+      # Mount config
+      - ./config:/app/config:ro
+      # Mount output directory
+      - ./output:/app/output
+    environment:
+      # Confluence settings (can be set via .env file)
+      - CONFLUENCE_URL=${CONFLUENCE_URL}
+      - CONFLUENCE_USERNAME=${CONFLUENCE_USERNAME}
+      - CONFLUENCE_API_TOKEN=${CONFLUENCE_API_TOKEN}
+      - CONFLUENCE_SPACE_KEY=${CONFLUENCE_SPACE_KEY}
+      # Repository path inside container
+      - REPOSITORY_PATH=/repo
+      # CI mode
+      - CI_MODE=${CI_MODE:-false}
+    command: scan --repo /repo --publish
+
+  # GUI mode (for local development)
+  workflow-tracker-gui:
+    build: .
+    container_name: workflow-tracker-gui
+    ports:
+      - "8501:8501"
+    volumes:
+      - ${REPO_TO_SCAN:-./}:/repo:ro
+      - ./config:/app/config:ro
+      - ./output:/app/output
+    environment:
+      - REPOSITORY_PATH=/repo
+    command: gui --repo /repo
