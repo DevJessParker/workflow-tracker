@@ -91,6 +91,53 @@ def main():
     """Main Streamlit app."""
     print("main() function called - rendering UI")
 
+    # Initialize dark mode state
+    if 'dark_mode' not in st.session_state:
+        st.session_state.dark_mode = False
+
+    # Dark mode toggle in sidebar
+    with st.sidebar:
+        st.session_state.dark_mode = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode)
+
+        # Apply dark mode styling
+        if st.session_state.dark_mode:
+            st.markdown("""
+            <style>
+            /* Dark mode styles */
+            .stApp {
+                background-color: #0e1117;
+                color: #fafafa;
+            }
+            .stMarkdown, .stText, p, span, label {
+                color: #fafafa !important;
+            }
+            .stTextInput > div > div > input {
+                background-color: #262730;
+                color: #fafafa;
+            }
+            .stSelectbox > div > div > div {
+                background-color: #262730;
+                color: #fafafa;
+            }
+            div[data-baseweb="select"] > div {
+                background-color: #262730;
+            }
+            .stExpander {
+                background-color: #262730;
+                border: 1px solid #464646;
+            }
+            .stButton > button {
+                background-color: #262730;
+                color: #fafafa;
+            }
+            .stMetric {
+                background-color: #262730;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
     st.title("🪅 Pinata Code")
     st.markdown("*It's what's inside that counts*")
     st.markdown("---")
@@ -149,54 +196,9 @@ def main():
 def render_scan_tab():
     """Render the scan configuration and execution tab."""
     st.header("Repository Scanner")
-    st.markdown("Configure and run workflow analysis on your codebase")
 
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.subheader("Configuration")
-
-        # Repository path
-        default_repo = os.environ.get('WORKFLOW_TRACKER_REPO', '.')
-        repo_path = st.text_input(
-            "Repository Path",
-            value=default_repo,
-            help="Path to the repository to scan"
-        )
-
-        # File extensions
-        extensions = st.text_input(
-            "File Extensions",
-            value=".cs,.ts,.js",
-            help="Comma-separated list of file extensions to scan"
-        )
-
-    with col2:
-        st.subheader("Detection Options")
-
-        detect_database = st.checkbox("Database Operations", value=True)
-        detect_api = st.checkbox("API Calls", value=True)
-        detect_files = st.checkbox("File I/O", value=True)
-        detect_messages = st.checkbox("Message Queues", value=True)
-        detect_transforms = st.checkbox("Data Transforms", value=True)
-
-    st.divider()
-
-    # Scan button
-    if st.button("🔍 Start Scan", type="primary", use_container_width=True):
-        scan_repository(
-            repo_path,
-            extensions.split(','),
-            detect_database,
-            detect_api,
-            detect_files,
-            detect_messages,
-            detect_transforms
-        )
-
-    # Show results summary if available
+    # Show results summary at the top if available
     if st.session_state.scan_result is not None:
-        st.divider()
         result = st.session_state.scan_result
         st.success(f"✅ Scan completed successfully!")
 
@@ -214,6 +216,56 @@ def render_scan_tab():
             with st.expander(f"⚠️ Errors ({len(result.errors)})", expanded=False):
                 for error in result.errors[:10]:  # Show first 10
                     st.text(error)
+
+        st.divider()
+
+    # Compact configuration form
+    with st.form("scan_config_form"):
+        st.markdown("**Configure and run workflow analysis**")
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            # Repository path
+            default_repo = os.environ.get('WORKFLOW_TRACKER_REPO', '.')
+            repo_path = st.text_input(
+                "Repository Path",
+                value=default_repo,
+                help="Path to the repository to scan"
+            )
+
+            # File extensions
+            extensions = st.text_input(
+                "File Extensions",
+                value=".cs,.ts,.js",
+                help="Comma-separated list of file extensions to scan"
+            )
+
+        with col2:
+            st.markdown("**Detection Options**")
+            detect_database = st.checkbox("Database Operations", value=True)
+            detect_api = st.checkbox("API Calls", value=True)
+            detect_files = st.checkbox("File I/O", value=True)
+            detect_messages = st.checkbox("Message Queues", value=True)
+            detect_transforms = st.checkbox("Data Transforms", value=True)
+
+        # Scan button inside form
+        submitted = st.form_submit_button("🔍 Start Scan", type="primary", use_container_width=True)
+
+    # Process scan when form is submitted
+    if submitted:
+        # Create a compact progress container
+        with st.container():
+            st.markdown("### Scanning Progress")
+            scan_repository(
+                repo_path,
+                extensions.split(','),
+                detect_database,
+                detect_api,
+                detect_files,
+                detect_messages,
+                detect_transforms
+            )
 
 
 def render_mermaid(mermaid_code, height=600):
@@ -392,25 +444,59 @@ def render_database_schema_tab():
 
     # Search bar for filtering tables
     st.subheader("Tables & Operations")
-    search_query = st.text_input("🔍 Search Tables", placeholder="Type to filter tables...", key="table_search")
+
+    col_search, col_checkbox = st.columns([3, 1])
+    with col_search:
+        search_query = st.text_input("🔍 Search Tables", placeholder="Type to filter tables...", key="table_search")
+    with col_checkbox:
+        include_related = st.checkbox("Include related tables", value=False, key="include_related")
 
     # Filter tables based on search
-    filtered_tables = {
-        name: data for name, data in schema_info['tables'].items()
-        if not search_query or search_query.lower() in name.lower()
-    }
+    filtered_tables = {}
+    if search_query:
+        # First, get directly matching tables
+        direct_matches = {
+            name: data for name, data in schema_info['tables'].items()
+            if search_query.lower() in name.lower()
+        }
+        filtered_tables.update(direct_matches)
+
+        # If include_related is checked, add related tables
+        if include_related:
+            related_tables = set()
+            for table_name, table_data in direct_matches.items():
+                # Add tables this table relates to
+                for rel in table_data.get('related_tables', []):
+                    related_tables.add(rel['table'])
+
+                # Add tables that relate to this table (reverse lookup)
+                for other_name, other_data in schema_info['tables'].items():
+                    for rel in other_data.get('related_tables', []):
+                        if rel['table'] == table_name:
+                            related_tables.add(other_name)
+
+            # Add related tables to filtered results
+            for related_name in related_tables:
+                if related_name in schema_info['tables'] and related_name not in filtered_tables:
+                    filtered_tables[related_name] = schema_info['tables'][related_name]
+    else:
+        # No search query - show all tables
+        filtered_tables = schema_info['tables']
 
     if not filtered_tables:
         st.warning(f"No tables found matching '{search_query}'")
     else:
-        st.caption(f"Showing {len(filtered_tables)} of {len(schema_info['tables'])} tables")
+        if search_query:
+            st.caption(f"Showing {len(filtered_tables)} of {len(schema_info['tables'])} tables")
+        else:
+            st.caption(f"Showing all {len(filtered_tables)} tables")
 
     for table_name, table_data in sorted(filtered_tables.items()):
         with st.expander(f"📊 {table_name}", expanded=False):
             # Operations Breakdown - Styled Circles
             st.markdown("### Operations Breakdown")
 
-            # Create three circles with counts
+            # Create three circles with counts (rainbow theme colors)
             circle_html = f"""
             <div style="display: flex; justify-content: center; gap: 40px; margin: 20px 0;">
                 <div style="text-align: center;">
@@ -418,48 +504,48 @@ def render_database_schema_tab():
                         width: 100px;
                         height: 100px;
                         border-radius: 50%;
-                        background: linear-gradient(135deg, #4CAF50, #66BB6A);
+                        background: linear-gradient(135deg, #48dbfb, #0abde3);
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         color: white;
                         font-size: 28px;
                         font-weight: bold;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
                     ">{table_data['read_count']}</div>
-                    <div style="margin-top: 10px; font-weight: 500; color: #4CAF50;">Reads</div>
+                    <div style="margin-top: 10px; font-weight: 500; color: #0abde3;">Reads</div>
                 </div>
                 <div style="text-align: center;">
                     <div style="
                         width: 100px;
                         height: 100px;
                         border-radius: 50%;
-                        background: linear-gradient(135deg, #FF9800, #FFB74D);
+                        background: linear-gradient(135deg, #f5576c, #feca57);
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         color: white;
                         font-size: 28px;
                         font-weight: bold;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
                     ">{table_data['write_count']}</div>
-                    <div style="margin-top: 10px; font-weight: 500; color: #FF9800;">Writes</div>
+                    <div style="margin-top: 10px; font-weight: 500; color: #f5576c;">Writes</div>
                 </div>
                 <div style="text-align: center;">
                     <div style="
                         width: 100px;
                         height: 100px;
                         border-radius: 50%;
-                        background: linear-gradient(135deg, #2196F3, #64B5F6);
+                        background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         color: white;
                         font-size: 28px;
                         font-weight: bold;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
                     ">{table_data['total_operations']}</div>
-                    <div style="margin-top: 10px; font-weight: 500; color: #2196F3;">Total</div>
+                    <div style="margin-top: 10px; font-weight: 500; color: #764ba2;">Total</div>
                 </div>
             </div>
             """
@@ -903,8 +989,9 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
     </style>
     """, unsafe_allow_html=True)
 
-    progress_container = st.empty()  # Container for both progress bar and pinata
-    status_text = st.empty()
+    # Compact progress display in a fixed container
+    progress_placeholder = st.empty()
+    status_placeholder = st.empty()
 
     try:
         # Build configuration
@@ -935,7 +1022,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
                 # Create combined progress bar and pinata overlay
                 combined_html = f"""
-                <div style="position: relative; width: 100%; margin-bottom: 10px;">
+                <div style="position: relative; width: 100%; margin-bottom: 5px;">
                     <div style="
                         width: 100%;
                         height: 8px;
@@ -971,17 +1058,18 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
                     ">🪅</div>
                 </div>
                 """
-                progress_container.markdown(combined_html, unsafe_allow_html=True)
+                progress_placeholder.markdown(combined_html, unsafe_allow_html=True)
 
-            status_text.text(message)
+            # Show status in a more compact way
+            status_placeholder.markdown(f"<small>{message}</small>", unsafe_allow_html=True)
 
         # Scan repository with progress updates
-        status_text.text("🔍 Starting repository scan...")
+        status_placeholder.markdown("<small>🔍 Starting repository scan...</small>", unsafe_allow_html=True)
         builder = WorkflowGraphBuilder(config)
         result = builder.build(repo_path, progress_callback=update_progress)
 
         # Render visualizations
-        status_text.text("🎨 Rendering visualizations...")
+        status_placeholder.markdown("<small>🎨 Rendering visualizations...</small>", unsafe_allow_html=True)
         renderer = WorkflowRenderer(config)
         output_files = renderer.render(result)
 
@@ -989,20 +1077,16 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         st.session_state.scan_result = result
         st.session_state.output_files = output_files
 
-        # Clear progress indicators and show success
-        progress_bar.empty()
-        status_text.empty()
-        duck_placeholder.empty()
-        st.success(f"✓ Scan complete! Found {len(result.graph.nodes)} workflow nodes in {result.scan_time_seconds:.1f}s")
-        st.info("📊 Check out the other tabs to explore your workflow data!")
+        # Clear progress indicators
+        progress_placeholder.empty()
+        status_placeholder.empty()
 
-        # Force rerun to show tabs
+        st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
         st.rerun()
 
     except Exception as e:
-        progress_bar.empty()
-        status_text.empty()
-        duck_placeholder.empty()
+        progress_placeholder.empty()
+        status_placeholder.empty()
         st.error(f"Error during scan: {str(e)}")
         st.code(traceback.format_exc())
 
