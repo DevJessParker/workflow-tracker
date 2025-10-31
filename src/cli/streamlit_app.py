@@ -167,10 +167,9 @@ def main():
     # Check if scan results exist
     has_results = st.session_state.scan_result is not None
 
-    # Handle one-time rerun after scan completion
-    if st.session_state.scan_complete_flag and has_results:
+    # Reset flag after rerun (prevents rerun loop)
+    if st.session_state.scan_complete_flag:
         st.session_state.scan_complete_flag = False
-        st.rerun()
 
     # Create tabbed interface
     if not has_results:
@@ -1091,10 +1090,10 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         status_placeholder.empty()
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
-        st.info("📊 Click any tab above to explore your workflow data!")
 
-        # Set flag for one-time rerun to show tabs
+        # Set flag to prevent rerun loop, then trigger rerun to show tabs
         st.session_state.scan_complete_flag = True
+        st.rerun()
 
     except Exception as e:
         progress_placeholder.empty()
