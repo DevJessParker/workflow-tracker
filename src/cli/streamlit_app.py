@@ -177,6 +177,8 @@ def main():
         st.session_state.scan_running = False
     if 'stop_scan' not in st.session_state:
         st.session_state.stop_scan = False
+    if 'scan_triggered' not in st.session_state:
+        st.session_state.scan_triggered = False
 
     # Check if scan results exist
     has_results = st.session_state.scan_result is not None
@@ -271,17 +273,23 @@ def render_scan_tab():
                 'detect_transforms': detect_transforms
             }
             st.session_state.scan_running = True
+            st.session_state.scan_triggered = True  # Flag that scan should start
             st.session_state.stop_scan = False
             st.rerun()
 
-        # Progress section (shown when scanning)
-        if st.session_state.scan_running:
+        # Progress section and scan execution (only when scan_triggered is True)
+        if st.session_state.scan_running and st.session_state.scan_triggered:
             st.divider()
             st.markdown("### Scanning Progress")
 
+            # Reset triggered flag to prevent re-execution on rerun
+            st.session_state.scan_triggered = False
+
             # Stop button
-            if st.button("⏹️ Stop Scan", type="secondary", use_container_width=True, key="stop_scan_button"):
-                st.session_state.stop_scan = True
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                if st.button("⏹️ Stop Scan", type="secondary", use_container_width=True, key="stop_scan_button"):
+                    st.session_state.stop_scan = True
 
             # Run the scan with stored parameters
             if hasattr(st.session_state, 'scan_params'):
@@ -295,6 +303,9 @@ def render_scan_tab():
                     params['detect_messages'],
                     params['detect_transforms']
                 )
+        elif st.session_state.scan_running and not st.session_state.scan_triggered:
+            # Scan is running but not triggered this cycle (shouldn't happen, but safety check)
+            st.info("⏳ Scan in progress...")
 
     with results_col:
         # Show results summary if available
@@ -1136,10 +1147,9 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Reset scan state and trigger rerun to show tabs
+        # Reset scan state - NO rerun needed, tabs will appear on next natural interaction
         st.session_state.scan_running = False
         st.session_state.scan_complete_flag = True
-        st.rerun()
 
     except KeyboardInterrupt as e:
         # Graceful stop requested by user
@@ -1147,7 +1157,6 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         status_placeholder.empty()
         st.session_state.scan_running = False
         st.warning(f"⏹️ Scan stopped by user")
-        st.rerun()
 
     except Exception as e:
         progress_placeholder.empty()
