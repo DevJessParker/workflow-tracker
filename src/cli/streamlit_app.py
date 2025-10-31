@@ -885,7 +885,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
     # Create progress placeholders
     progress_bar = st.progress(0)
     status_text = st.empty()
-    duck_placeholder = st.empty()
+    duck_placeholder = st.empty()  # For pinata indicator
 
     try:
         # Build configuration
@@ -909,17 +909,27 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         # Progress callback for real-time updates
         def update_progress(current, total, message):
-            """Update progress bar and status text with rubber duck."""
+            """Update progress bar and status text with pinata indicator."""
             if total > 0:
                 progress = current / total
                 progress_bar.progress(progress)
 
-                # Calculate duck position (0-100% as percentage)
-                duck_position = int(progress * 100)
+                # Calculate pinata position (0-100% as percentage)
+                pinata_position = int(progress * 100)
 
-                # Create visual progress with duck
-                padding_left = " " * (duck_position // 2)  # Rough positioning
-                duck_placeholder.markdown(f"<div style='font-size: 24px;'>{padding_left}🦆</div>", unsafe_allow_html=True)
+                # Create visual progress with pinata (flipped to face right)
+                pinata_html = f"""
+                <div style="position: relative; width: 100%; height: 30px; margin-top: -10px;">
+                    <div style="
+                        position: absolute;
+                        left: {pinata_position}%;
+                        transform: translateX(-50%) scaleX(-1);
+                        font-size: 28px;
+                        transition: left 0.3s ease-out;
+                    ">🪅</div>
+                </div>
+                """
+                duck_placeholder.markdown(pinata_html, unsafe_allow_html=True)
 
             status_text.text(message)
 
