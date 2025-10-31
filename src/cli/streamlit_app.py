@@ -193,7 +193,7 @@ def render_scan_tab():
         )
 
     # Show results summary if available
-    if 'scan_result' in st.session_state:
+    if st.session_state.scan_result is not None:
         st.divider()
         result = st.session_state.scan_result
         st.success(f"✅ Scan completed successfully!")
@@ -315,7 +315,7 @@ def render_visualizations_tab():
             st.error("Please select a filter value")
 
     # Display generated diagram if available
-    if 'generated_diagram' in st.session_state:
+    if st.session_state.generated_diagram is not None:
         diagram_data = st.session_state.generated_diagram
         st.subheader(diagram_data['title'])
 
@@ -880,8 +880,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         del st.session_state[key]
 
     # Clear previous diagram
-    if 'generated_diagram' in st.session_state:
-        del st.session_state['generated_diagram']
+    st.session_state.generated_diagram = None
 
     # Create progress placeholders
     progress_bar = st.progress(0)
