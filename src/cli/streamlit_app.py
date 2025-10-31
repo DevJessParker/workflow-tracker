@@ -104,37 +104,76 @@ def main():
 
     # Show status indicator
     print("Imports OK - displaying GUI")
-    st.sidebar.success("✅ GUI Ready")
 
-    # Sidebar configuration
-    st.sidebar.header("Configuration")
+    # Check if scan results exist
+    has_results = 'scan_result' in st.session_state
 
-    # Repository path
-    default_repo = os.environ.get('WORKFLOW_TRACKER_REPO', '.')
-    repo_path = st.sidebar.text_input(
-        "Repository Path",
-        value=default_repo,
-        help="Path to the repository to scan"
-    )
+    # Create tabbed interface
+    if not has_results:
+        # Only show scan tab if no results
+        tab_scan = st.tabs(["📂 Scan Repository"])[0]
+        with tab_scan:
+            render_scan_tab()
+    else:
+        # Show all tabs once scan is complete
+        tab_scan, tab_viz, tab_schema, tab_analysis = st.tabs([
+            "📂 Scan Repository",
+            "📊 Visualizations",
+            "🗄️ Database Schema",
+            "📈 Data Analysis"
+        ])
 
-    # Scan options
-    st.sidebar.subheader("Scan Options")
+        with tab_scan:
+            render_scan_tab()
 
-    detect_database = st.sidebar.checkbox("Database Operations", value=True)
-    detect_api = st.sidebar.checkbox("API Calls", value=True)
-    detect_files = st.sidebar.checkbox("File I/O", value=True)
-    detect_messages = st.sidebar.checkbox("Message Queues", value=True)
-    detect_transforms = st.sidebar.checkbox("Data Transforms", value=True)
+        with tab_viz:
+            render_visualizations_tab()
 
-    # File extensions
-    extensions = st.sidebar.text_input(
-        "File Extensions",
-        value=".cs,.ts,.js",
-        help="Comma-separated list of file extensions to scan"
-    )
+        with tab_schema:
+            render_database_schema_tab()
+
+        with tab_analysis:
+            render_analysis_tab()
+
+
+def render_scan_tab():
+    """Render the scan configuration and execution tab."""
+    st.header("Repository Scanner")
+    st.markdown("Configure and run workflow analysis on your codebase")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.subheader("Configuration")
+
+        # Repository path
+        default_repo = os.environ.get('WORKFLOW_TRACKER_REPO', '.')
+        repo_path = st.text_input(
+            "Repository Path",
+            value=default_repo,
+            help="Path to the repository to scan"
+        )
+
+        # File extensions
+        extensions = st.text_input(
+            "File Extensions",
+            value=".cs,.ts,.js",
+            help="Comma-separated list of file extensions to scan"
+        )
+
+    with col2:
+        st.subheader("Detection Options")
+
+        detect_database = st.checkbox("Database Operations", value=True)
+        detect_api = st.checkbox("API Calls", value=True)
+        detect_files = st.checkbox("File I/O", value=True)
+        detect_messages = st.checkbox("Message Queues", value=True)
+        detect_transforms = st.checkbox("Data Transforms", value=True)
+
+    st.divider()
 
     # Scan button
-    if st.sidebar.button("🔍 Scan Repository", type="primary"):
+    if st.button("🔍 Start Scan", type="primary", use_container_width=True):
         scan_repository(
             repo_path,
             extensions.split(','),
@@ -145,53 +184,486 @@ def main():
             detect_transforms
         )
 
-    # Diagram generation section (only show if scan results exist)
+    # Show results summary if available
     if 'scan_result' in st.session_state:
-        st.sidebar.divider()
-        st.sidebar.subheader("📊 Generate Diagrams")
+        st.divider()
+        result = st.session_state.scan_result
+        st.success(f"✅ Scan completed successfully!")
 
-        filter_type = st.sidebar.selectbox(
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Files Scanned", f"{result.files_scanned:,}")
+        with col2:
+            st.metric("Workflow Nodes", f"{len(result.graph.nodes):,}")
+        with col3:
+            st.metric("Connections", f"{len(result.graph.edges):,}")
+        with col4:
+            st.metric("Scan Time", f"{result.scan_time_seconds:.1f}s")
+
+        if result.errors:
+            with st.expander(f"⚠️ Errors ({len(result.errors)})", expanded=False):
+                for error in result.errors[:10]:  # Show first 10
+                    st.text(error)
+
+
+def render_visualizations_tab():
+    """Render the visualizations tab with diagram generation."""
+    st.header("Workflow Visualizations")
+    st.markdown("Generate and view workflow diagrams filtered by module, table, or endpoint")
+
+    result = st.session_state.scan_result
+
+    # Filter controls
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col1:
+        filter_type = st.selectbox(
             "Filter By",
             ["Module/Directory", "Database Table", "API Endpoint"],
+            key="viz_filter_type",
             help="Choose what to filter the diagram by"
         )
 
-        # Get available filter options from scan results
-        result = st.session_state.scan_result
-        filter_options = get_filter_options(result, filter_type)
+    # Cache filter options in session state to prevent recalculation on every interaction
+    cache_key = f"filter_options_{filter_type}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = get_filter_options(result, filter_type)
 
+    filter_options = st.session_state[cache_key]
+
+    with col2:
         if not filter_options:
-            st.sidebar.warning(f"No {filter_type.lower()} found in scan results")
+            st.warning(f"No {filter_type.lower()} found in scan results")
             filter_value = None
         else:
-            filter_value = st.sidebar.selectbox(
+            filter_value = st.selectbox(
                 "Select Filter",
                 options=filter_options,
+                key="viz_filter_value",
                 help=f"Select from {len(filter_options)} available {filter_type.lower()}s"
             )
 
-        max_nodes = st.sidebar.slider(
+    with col3:
+        max_nodes = st.number_input(
             "Max Nodes",
             min_value=10,
-            max_value=100,
+            max_value=200,
             value=50,
+            step=10,
             help="Maximum nodes to include in diagram"
         )
 
-        if st.sidebar.button("🎨 Generate Diagram", type="secondary"):
-            if filter_value:
-                generate_diagram(
-                    st.session_state.scan_result,
-                    filter_type,
-                    filter_value,
-                    max_nodes
-                )
-            else:
-                st.sidebar.error("Please select a filter value")
+    st.divider()
 
-    # Display results if available
-    if 'scan_result' in st.session_state:
-        display_results(st.session_state.scan_result)
+    # Generate button
+    if st.button("🎨 Generate Diagram", type="primary", use_container_width=True):
+        if filter_value:
+            generate_and_render_diagram(result, filter_type, filter_value, max_nodes)
+        else:
+            st.error("Please select a filter value")
+
+    # Display generated diagram if available
+    if 'generated_diagram' in st.session_state:
+        diagram_data = st.session_state.generated_diagram
+        st.subheader(diagram_data['title'])
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Nodes", diagram_data['node_count'])
+        with col2:
+            st.metric("Connections", diagram_data['edge_count'])
+        with col3:
+            st.metric("Complexity", f"{diagram_data['edge_count'] / max(diagram_data['node_count'], 1):.1f}")
+
+        st.divider()
+
+        # Render Mermaid diagram
+        st.subheader("Interactive Diagram")
+        st.markdown(f"""
+```mermaid
+{diagram_data['code']}
+```
+        """)
+
+        # Download options
+        st.divider()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="📥 Download Mermaid Code",
+                data=diagram_data['code'],
+                file_name=f"workflow_diagram_{filter_value.replace('/', '_')}.mmd",
+                mime="text/plain"
+            )
+        with col2:
+            # Also provide markdown version
+            markdown_content = f"# {diagram_data['title']}\n\n```mermaid\n{diagram_data['code']}\n```"
+            st.download_button(
+                label="📥 Download as Markdown",
+                data=markdown_content,
+                file_name=f"workflow_diagram_{filter_value.replace('/', '_')}.md",
+                mime="text/markdown"
+            )
+
+
+def render_database_schema_tab():
+    """Render the database schema analysis tab."""
+    st.header("Database Schema Analysis")
+    st.markdown("Explore database tables, relationships, and detected operations")
+
+    result = st.session_state.scan_result
+
+    # Extract database-related nodes
+    db_nodes = [
+        node for node in result.graph.nodes
+        if node.type in [WorkflowType.DATABASE_READ, WorkflowType.DATABASE_WRITE]
+    ]
+
+    if not db_nodes:
+        st.warning("No database operations detected in the scan.")
+        st.info("Make sure 'Database Operations' detection was enabled during scanning.")
+        return
+
+    # Analyze database schema
+    schema_info = analyze_database_schema(db_nodes, result.graph.edges)
+
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Tables Detected", len(schema_info['tables']))
+    with col2:
+        st.metric("Read Operations", schema_info['total_reads'])
+    with col3:
+        st.metric("Write Operations", schema_info['total_writes'])
+    with col4:
+        st.metric("Table Relationships", len(schema_info['relationships']))
+
+    st.divider()
+
+    # Table details
+    st.subheader("Tables & Operations")
+
+    for table_name, table_data in sorted(schema_info['tables'].items()):
+        with st.expander(f"📊 {table_name}", expanded=False):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**Operations**")
+                st.write(f"- Reads: {table_data['read_count']}")
+                st.write(f"- Writes: {table_data['write_count']}")
+                st.write(f"- Total: {table_data['total_operations']}")
+
+            with col2:
+                st.markdown("**Locations**")
+                for loc in table_data['locations'][:5]:  # Show first 5
+                    st.text(f"• {loc}")
+                if len(table_data['locations']) > 5:
+                    st.text(f"  ... and {len(table_data['locations']) - 5} more")
+
+            # Show sample operations
+            if table_data['sample_operations']:
+                st.markdown("**Sample Operations**")
+                for op in table_data['sample_operations'][:3]:
+                    st.code(op, language="sql")
+
+    # Relationship diagram
+    if schema_info['relationships']:
+        st.divider()
+        st.subheader("Table Relationships")
+        st.markdown("Detected relationships based on workflow patterns")
+
+        # Generate simple Mermaid ER diagram
+        er_diagram = generate_er_diagram(schema_info)
+        st.markdown(f"""
+```mermaid
+{er_diagram}
+```
+        """)
+
+
+def render_analysis_tab():
+    """Render the data analysis and insights tab."""
+    st.header("Data Flow Analysis")
+    st.markdown("Insights and patterns detected in your codebase")
+
+    result = st.session_state.scan_result
+
+    # Operation breakdown
+    st.subheader("Operation Types")
+
+    from collections import Counter
+    type_counts = Counter(node.type for node in result.graph.nodes)
+
+    # Create columns for metrics
+    cols = st.columns(min(5, len(type_counts)))
+    for col, (workflow_type, count) in zip(cols, type_counts.most_common()):
+        with col:
+            st.metric(
+                workflow_type.value.replace('_', ' ').title(),
+                f"{count:,}",
+                help=f"{count} operations of this type detected"
+            )
+
+    st.divider()
+
+    # Hot spots (files with most operations)
+    st.subheader("🔥 Activity Hot Spots")
+    st.markdown("Files with the most workflow operations")
+
+    file_operation_counts = Counter(node.location.file_path for node in result.graph.nodes)
+
+    hot_spots_data = []
+    for file_path, count in file_operation_counts.most_common(20):
+        # Shorten file path for display
+        display_path = file_path if len(file_path) < 60 else "..." + file_path[-57:]
+        hot_spots_data.append({
+            "File": display_path,
+            "Operations": count,
+            "Full Path": file_path
+        })
+
+    if hot_spots_data:
+        import pandas as pd
+        df = pd.DataFrame(hot_spots_data)
+        st.dataframe(
+            df[["File", "Operations"]],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    st.divider()
+
+    # Workflow patterns
+    st.subheader("📋 Common Workflow Patterns")
+
+    patterns = analyze_workflow_patterns(result.graph)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**API → Database (Data Ingestion)**")
+        st.metric("Occurrences", patterns['api_to_db'])
+
+        st.markdown("**Database → API (Data Retrieval)**")
+        st.metric("Occurrences", patterns['db_to_api'])
+
+    with col2:
+        st.markdown("**Database → Transform → API**")
+        st.metric("Occurrences", patterns['db_transform_api'])
+
+        st.markdown("**API → Transform → Database**")
+        st.metric("Occurrences", patterns['api_transform_db'])
+
+    # Most connected nodes
+    st.divider()
+    st.subheader("🔗 Most Connected Operations")
+    st.markdown("Operations with the most connections (high integration points)")
+
+    node_connections = {}
+    for edge in result.graph.edges:
+        node_connections[edge.source] = node_connections.get(edge.source, 0) + 1
+        node_connections[edge.target] = node_connections.get(edge.target, 0) + 1
+
+    top_connected = sorted(node_connections.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    for node_id, connection_count in top_connected:
+        node = result.graph.get_node(node_id)
+        if node:
+            with st.expander(f"{node.name} ({connection_count} connections)", expanded=False):
+                st.write(f"**Type:** {node.type.value}")
+                st.write(f"**Location:** {node.location}")
+                if node.code_snippet:
+                    st.code(node.code_snippet)
+
+
+def analyze_database_schema(db_nodes, edges):
+    """Analyze database operations to extract schema information."""
+    schema = {
+        'tables': {},
+        'total_reads': 0,
+        'total_writes': 0,
+        'relationships': []
+    }
+
+    for node in db_nodes:
+        table_name = node.table_name or "Unknown"
+
+        if table_name not in schema['tables']:
+            schema['tables'][table_name] = {
+                'read_count': 0,
+                'write_count': 0,
+                'total_operations': 0,
+                'locations': set(),
+                'sample_operations': []
+            }
+
+        table_data = schema['tables'][table_name]
+
+        # Count operations
+        if node.type == WorkflowType.DATABASE_READ:
+            table_data['read_count'] += 1
+            schema['total_reads'] += 1
+        elif node.type == WorkflowType.DATABASE_WRITE:
+            table_data['write_count'] += 1
+            schema['total_writes'] += 1
+
+        table_data['total_operations'] += 1
+        table_data['locations'].add(str(node.location))
+
+        # Save sample code
+        if node.code_snippet and len(table_data['sample_operations']) < 3:
+            table_data['sample_operations'].append(node.code_snippet)
+
+    # Convert sets to lists for JSON compatibility
+    for table_data in schema['tables'].values():
+        table_data['locations'] = sorted(list(table_data['locations']))
+
+    # Detect relationships (tables that interact via edges)
+    table_connections = set()
+    node_to_table = {node.id: node.table_name for node in db_nodes if node.table_name}
+
+    for edge in edges:
+        source_table = node_to_table.get(edge.source)
+        target_table = node_to_table.get(edge.target)
+
+        if source_table and target_table and source_table != target_table:
+            # Create ordered relationship
+            rel = tuple(sorted([source_table, target_table]))
+            table_connections.add(rel)
+
+    schema['relationships'] = list(table_connections)
+
+    return schema
+
+
+def generate_er_diagram(schema_info):
+    """Generate a Mermaid ER diagram from schema information."""
+    lines = ["erDiagram"]
+
+    # Add tables with their operation counts
+    for table_name, table_data in sorted(schema_info['tables'].items()):
+        # Clean table name for Mermaid
+        clean_name = table_name.replace(' ', '_').replace('-', '_')
+        lines.append(f"    {clean_name} {{")
+        lines.append(f"        int reads PK \"Read ops: {table_data['read_count']}\"")
+        lines.append(f"        int writes \"Write ops: {table_data['write_count']}\"")
+        lines.append("    }")
+
+    # Add relationships
+    for table1, table2 in schema_info['relationships']:
+        clean1 = table1.replace(' ', '_').replace('-', '_')
+        clean2 = table2.replace(' ', '_').replace('-', '_')
+        lines.append(f"    {clean1} ||--o{{ {clean2} : \"workflow\"")
+
+    return '\n'.join(lines)
+
+
+def analyze_workflow_patterns(graph):
+    """Analyze the graph for common workflow patterns."""
+    patterns = {
+        'api_to_db': 0,
+        'db_to_api': 0,
+        'db_transform_api': 0,
+        'api_transform_db': 0
+    }
+
+    # Build adjacency map for faster lookup
+    adjacency = {}
+    for edge in graph.edges:
+        if edge.source not in adjacency:
+            adjacency[edge.source] = []
+        adjacency[edge.source].append(edge.target)
+
+    # Create node type map
+    node_types = {node.id: node.type for node in graph.nodes}
+
+    # Detect patterns
+    for node in graph.nodes:
+        node_type = node_types.get(node.id)
+        targets = adjacency.get(node.id, [])
+
+        for target_id in targets:
+            target_type = node_types.get(target_id)
+
+            # API → Database
+            if node_type == WorkflowType.API_CALL and target_type in [WorkflowType.DATABASE_WRITE, WorkflowType.DATABASE_READ]:
+                patterns['api_to_db'] += 1
+
+            # Database → API
+            if node_type in [WorkflowType.DATABASE_READ, WorkflowType.DATABASE_WRITE] and target_type == WorkflowType.API_CALL:
+                patterns['db_to_api'] += 1
+
+            # Check for 3-step patterns
+            for second_target_id in adjacency.get(target_id, []):
+                second_target_type = node_types.get(second_target_id)
+
+                # DB → Transform → API
+                if (node_type == WorkflowType.DATABASE_READ and
+                    target_type == WorkflowType.DATA_TRANSFORM and
+                    second_target_type == WorkflowType.API_CALL):
+                    patterns['db_transform_api'] += 1
+
+                # API → Transform → DB
+                if (node_type == WorkflowType.API_CALL and
+                    target_type == WorkflowType.DATA_TRANSFORM and
+                    second_target_type in [WorkflowType.DATABASE_WRITE, WorkflowType.DATABASE_READ]):
+                    patterns['api_transform_db'] += 1
+
+    return patterns
+
+
+def generate_and_render_diagram(result, filter_type, filter_value, max_nodes):
+    """Generate a Mermaid diagram based on filter and store in session state."""
+    try:
+        # Filter nodes based on type
+        if filter_type == "Module/Directory":
+            filtered_nodes = [
+                node for node in result.graph.nodes
+                if filter_value in node.location.file_path
+            ][:max_nodes]
+            diagram_title = f"Module: {filter_value}"
+
+        elif filter_type == "Database Table":
+            filtered_nodes = [
+                node for node in result.graph.nodes
+                if node.table_name and filter_value.lower() in node.table_name.lower()
+            ][:max_nodes]
+            diagram_title = f"Table: {filter_value}"
+
+        else:  # API Endpoint
+            filtered_nodes = [
+                node for node in result.graph.nodes
+                if node.endpoint and filter_value in node.endpoint
+            ][:max_nodes]
+            diagram_title = f"Endpoint: {filter_value}"
+
+        if not filtered_nodes:
+            st.warning(f"No nodes found matching '{filter_value}'")
+            return
+
+        # Filter edges
+        node_ids = {node.id for node in filtered_nodes}
+        filtered_edges = [
+            edge for edge in result.graph.edges
+            if edge.source in node_ids and edge.target in node_ids
+        ]
+
+        # Build Mermaid diagram
+        mermaid_code = build_mermaid_diagram(filtered_nodes, filtered_edges, diagram_title)
+
+        # Store in session state
+        st.session_state.generated_diagram = {
+            'code': mermaid_code,
+            'title': diagram_title,
+            'node_count': len(filtered_nodes),
+            'edge_count': len(filtered_edges)
+        }
+
+        st.success(f"✓ Generated diagram with {len(filtered_nodes)} nodes!")
+
+    except Exception as e:
+        st.error(f"Error generating diagram: {str(e)}")
+        st.code(traceback.format_exc())
 
 
 def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, detect_msg, detect_transform):
@@ -199,6 +671,15 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
     if not os.path.exists(repo_path):
         st.error(f"Repository path not found: {repo_path}")
         return
+
+    # Clear cached filter options from previous scans
+    keys_to_remove = [key for key in st.session_state.keys() if key.startswith('filter_options_')]
+    for key in keys_to_remove:
+        del st.session_state[key]
+
+    # Clear previous diagram
+    if 'generated_diagram' in st.session_state:
+        del st.session_state['generated_diagram']
 
     # Create progress placeholders
     progress_bar = st.progress(0)
@@ -250,66 +731,16 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         progress_bar.empty()
         status_text.empty()
         st.success(f"✓ Scan complete! Found {len(result.graph.nodes)} workflow nodes in {result.scan_time_seconds:.1f}s")
+        st.info("📊 Check out the other tabs to explore your workflow data!")
+
+        # Force rerun to show tabs
+        st.rerun()
 
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
         st.error(f"Error during scan: {str(e)}")
         st.code(traceback.format_exc())
-
-
-def generate_diagram(result, filter_type, filter_value, max_nodes):
-    """Generate a Mermaid diagram based on filter."""
-    try:
-        # Filter nodes based on type
-        if filter_type == "Module/Directory":
-            filtered_nodes = [
-                node for node in result.graph.nodes
-                if filter_value in node.location.file_path
-            ][:max_nodes]
-            diagram_title = f"Module: {filter_value}"
-
-        elif filter_type == "Database Table":
-            filtered_nodes = [
-                node for node in result.graph.nodes
-                if node.table_name and filter_value.lower() in node.table_name.lower()
-            ][:max_nodes]
-            diagram_title = f"Table: {filter_value}"
-
-        else:  # API Endpoint
-            filtered_nodes = [
-                node for node in result.graph.nodes
-                if node.endpoint and filter_value in node.endpoint
-            ][:max_nodes]
-            diagram_title = f"Endpoint: {filter_value}"
-
-        if not filtered_nodes:
-            st.sidebar.warning(f"No nodes found matching '{filter_value}'")
-            return
-
-        # Filter edges
-        node_ids = {node.id for node in filtered_nodes}
-        filtered_edges = [
-            edge for edge in result.graph.edges
-            if edge.source in node_ids and edge.target in node_ids
-        ]
-
-        # Build Mermaid diagram
-        mermaid_code = build_mermaid_diagram(filtered_nodes, filtered_edges, diagram_title)
-
-        # Store in session state
-        st.session_state.generated_diagram = {
-            'code': mermaid_code,
-            'title': diagram_title,
-            'node_count': len(filtered_nodes),
-            'edge_count': len(filtered_edges)
-        }
-
-        st.sidebar.success(f"✓ Generated diagram with {len(filtered_nodes)} nodes!")
-
-    except Exception as e:
-        st.sidebar.error(f"Error generating diagram: {str(e)}")
-        st.sidebar.code(traceback.format_exc())
 
 
 def build_mermaid_diagram(nodes, edges, title):
@@ -357,139 +788,6 @@ def build_mermaid_diagram(nodes, edges, title):
             lines.append(f"    {source_id} --> {target_id}")
 
     return '\n'.join(lines)
-
-
-def display_results(result):
-    """Display scan results."""
-    st.header("Scan Results")
-
-    # Display generated diagram if available
-    if 'generated_diagram' in st.session_state:
-        st.subheader("📊 Generated Diagram")
-        diagram = st.session_state.generated_diagram
-
-        st.info(f"**{diagram['title']}** - {diagram['node_count']} nodes, {diagram['edge_count']} connections")
-
-        # Display Mermaid code
-        st.code(diagram['code'], language='mermaid')
-
-        # Download button
-        st.download_button(
-            label="💾 Download Mermaid Code",
-            data=diagram['code'],
-            file_name=f"workflow_diagram_{diagram['title'].replace(':', '_').replace(' ', '_')}.mmd",
-            mime='text/plain'
-        )
-
-        st.markdown("""
-        **To use this diagram:**
-        - Copy the code above and paste into [Mermaid Live Editor](https://mermaid.live/)
-        - Add to Markdown files (GitHub, GitLab, etc.)
-        - Install "Mermaid Diagrams" app in Confluence to use there
-        """)
-
-        st.divider()
-
-    st.header("Scan Results")
-
-    # Summary metrics
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Files Scanned", result.files_scanned)
-    with col2:
-        st.metric("Workflow Nodes", len(result.graph.nodes))
-    with col3:
-        st.metric("Connections", len(result.graph.edges))
-    with col4:
-        st.metric("Scan Time", f"{result.scan_time_seconds:.1f}s")
-
-    # Workflow type breakdown
-    st.subheader("Workflow Operations by Type")
-
-    from collections import Counter
-    type_counts = Counter(node.type.value for node in result.graph.nodes)
-
-    if type_counts:
-        import pandas as pd
-
-        df = pd.DataFrame([
-            {'Type': k.replace('_', ' ').title(), 'Count': v}
-            for k, v in sorted(type_counts.items())
-        ])
-
-        st.bar_chart(df.set_index('Type'))
-
-    # Interactive visualization
-    st.subheader("Interactive Workflow Graph")
-
-    if 'output_files' in st.session_state and 'html' in st.session_state.output_files:
-        html_file = st.session_state.output_files['html']
-
-        if os.path.exists(html_file):
-            with open(html_file, 'r') as f:
-                html_content = f.read()
-
-            st.components.v1.html(html_content, height=800, scrolling=True)
-        else:
-            st.warning("HTML visualization file not found")
-
-    # Detailed node listing
-    st.subheader("Workflow Nodes")
-
-    # Filter by type
-    node_types = sorted(set(node.type.value for node in result.graph.nodes))
-    selected_type = st.selectbox(
-        "Filter by type",
-        ['All'] + [t.replace('_', ' ').title() for t in node_types]
-    )
-
-    # Display nodes
-    nodes_to_display = result.graph.nodes
-
-    if selected_type != 'All':
-        selected_type_value = selected_type.lower().replace(' ', '_')
-        nodes_to_display = [
-            node for node in result.graph.nodes
-            if node.type.value == selected_type_value
-        ]
-
-    for node in sorted(nodes_to_display, key=lambda n: n.location.file_path)[:50]:  # Limit to 50
-        with st.expander(f"{node.name} - {node.location}"):
-            st.write(f"**Type:** {node.type.value.replace('_', ' ').title()}")
-            st.write(f"**Description:** {node.description}")
-
-            if node.table_name:
-                st.write(f"**Table:** `{node.table_name}`")
-            if node.endpoint:
-                st.write(f"**Endpoint:** `{node.endpoint}`")
-            if node.method:
-                st.write(f"**Method:** `{node.method}`")
-            if node.queue_name:
-                st.write(f"**Queue:** `{node.queue_name}`")
-
-            if node.code_snippet:
-                st.code(node.code_snippet, language='csharp')
-
-    if len(nodes_to_display) > 50:
-        st.info(f"Showing first 50 of {len(nodes_to_display)} nodes")
-
-    # Download options
-    st.subheader("Download Results")
-
-    if 'output_files' in st.session_state:
-        cols = st.columns(len(st.session_state.output_files))
-
-        for i, (fmt, file_path) in enumerate(st.session_state.output_files.items()):
-            with cols[i]:
-                if file_path and os.path.exists(file_path):
-                    with open(file_path, 'rb') as f:
-                        st.download_button(
-                            label=f"Download {fmt.upper()}",
-                            data=f,
-                            file_name=os.path.basename(file_path),
-                            mime='application/octet-stream'
-                        )
 
 
 if __name__ == '__main__':
