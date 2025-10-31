@@ -43,71 +43,94 @@ class ConfluencePublisher:
             )
 
     def publish(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None, auto_generate_diagrams: bool = False) -> str:
-        """Publish workflow documentation to Confluence.
+        """Publish workflow documentation to Confluence with parent/child structure.
+
+        Creates structure:
+          Workflow Documentation (parent)
+            ├── Summary & Statistics (child - main content)
+            ├── Auto-Generated Diagrams (child - if auto_generate_diagrams=True)
+            └── workflow_graph.json (attachment on parent)
 
         Args:
             result: Scan result with workflow graph
             html_file: Path to HTML visualization file
             markdown_file: Path to Markdown documentation file
             json_file: Path to JSON data file
-            auto_generate_diagrams: If True, auto-generate and embed Mermaid diagrams
+            auto_generate_diagrams: If True, create child page with Mermaid diagrams
 
         Returns:
-            URL of the created/updated Confluence page
+            URL of the parent Confluence page
         """
         self._connect()
 
-        # Generate page title
-        repo_name = os.path.basename(result.repository_path)
-        page_title = f"Workflow Documentation - {repo_name}"
-
-        # Build page content
-        content = self._build_page_content(result, html_file, markdown_file, json_file, auto_generate_diagrams)
-
-        # Check if page already exists
         space_key = self.config['space_key']
-        existing_page = self._find_page(space_key, page_title)
+        repo_name = os.path.basename(result.repository_path)
 
-        if existing_page:
-            # Update existing page
-            page_id = existing_page['id']
-            print(f"Updating existing Confluence page: {page_title}")
+        # Step 1: Find or create parent page "Workflow Documentation"
+        parent_title = "Workflow Documentation"
+        parent_page = self._find_page(space_key, parent_title)
 
-            self.confluence.update_page(
-                page_id=page_id,
-                title=page_title,
-                body=content,
-                representation='storage'
-            )
-
-            page_url = f"{self.config['url']}/wiki/spaces/{space_key}/pages/{page_id}"
-
+        if parent_page:
+            parent_id = parent_page['id']
+            print(f"Found existing parent page: {parent_title}")
         else:
-            # Create new page
-            print(f"Creating new Confluence page: {page_title}")
+            print(f"Creating parent page: {parent_title}")
+            # Parent page content is simple intro
+            parent_content = self._build_parent_page_content(repo_name, result)
 
-            parent_page_id = self.config.get('parent_page_id')
-
-            new_page = self.confluence.create_page(
+            configured_parent_id = self.config.get('parent_page_id')
+            parent_page = self.confluence.create_page(
                 space=space_key,
-                title=page_title,
-                body=content,
-                parent_id=parent_page_id,
+                title=parent_title,
+                body=parent_content,
+                parent_id=configured_parent_id,
                 representation='storage'
             )
+            parent_id = parent_page['id']
 
-            page_id = new_page['id']
-            page_url = f"{self.config['url']}/wiki/spaces/{space_key}/pages/{page_id}"
+        # Step 2: Create/update child page with summary and statistics
+        child_title = f"{repo_name} - Summary & Statistics"
+        summary_content = self._build_summary_page_content(result, html_file, markdown_file, json_file)
 
-        # Attach files
+        child_page = self._create_or_update_child_page(
+            space_key,
+            parent_id,
+            child_title,
+            summary_content
+        )
+
+        # Step 3: If auto-diagrams enabled, create/update diagrams child page
+        if auto_generate_diagrams:
+            diagrams_title = f"{repo_name} - Auto-Generated Diagrams"
+            diagrams_content = self._generate_diagrams(result)
+
+            if diagrams_content:
+                self._create_or_update_child_page(
+                    space_key,
+                    parent_id,
+                    diagrams_title,
+                    diagrams_content
+                )
+
+        # Step 4: Attach files to parent page
         if html_file and os.path.exists(html_file):
-            self._attach_file(page_id, html_file, 'workflow_graph.html')
+            self._attach_file(parent_id, html_file, f'{repo_name}_workflow_graph.html')
 
         if json_file and os.path.exists(json_file):
-            self._attach_file(page_id, json_file, 'workflow_graph.json')
+            self._attach_file(parent_id, json_file, f'{repo_name}_workflow_graph.json')
 
-        print(f"✓ Published to Confluence: {page_url}")
-        return page_url
+        # Step 5: Update parent page with latest scan timestamp
+        parent_content_updated = self._build_parent_page_content(repo_name, result)
+        self.confluence.update_page(
+            page_id=parent_id,
+            title=parent_title,
+            body=parent_content_updated,
+            representation='storage'
+        )
+
+        parent_url = f"{self.config['url']}/wiki/spaces/{space_key}/pages/{parent_id}"
+        print(f"✓ Published to Confluence: {parent_url}")
+        return parent_url
 
     def _find_page(self, space_key: str, title: str) -> Optional[Dict]:
         """Find existing page by title.
@@ -128,76 +151,6 @@ class ConfluencePublisher:
             return result
         except Exception:
             return None
-
-    def _build_page_content(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None, auto_generate_diagrams: bool = False) -> str:
-        """Build Confluence page content in storage format (XHTML).
-
-        Args:
-            result: Scan result
-            html_file: Path to HTML visualization
-            markdown_file: Path to Markdown documentation
-            json_file: Path to JSON data file
-            auto_generate_diagrams: If True, auto-generate and embed Mermaid diagrams
-
-        Returns:
-            Confluence storage format content
-        """
-        from datetime import datetime
-
-        content = []
-
-        # Header
-        content.append('<h1>Workflow Documentation</h1>')
-        content.append(f'<p><strong>Repository:</strong> <code>{result.repository_path}</code></p>')
-        content.append(f'<p><strong>Last Updated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
-        content.append(f'<p><strong>Files Scanned:</strong> {result.files_scanned}</p>')
-        content.append(f'<p><strong>Workflow Nodes:</strong> {len(result.graph.nodes)}</p>')
-        content.append(f'<p><strong>Workflow Edges:</strong> {len(result.graph.edges)}</p>')
-        content.append('<hr />')
-
-        # Add links to attachments
-        if html_file or json_file:
-            content.append('<h2>Downloads</h2>')
-            content.append('<p>The following files are attached to this page:</p>')
-            content.append('<ul>')
-            if html_file:
-                content.append('<li><strong>workflow_graph.html</strong> - Interactive visualization (download and open in browser)</li>')
-            if json_file:
-                content.append('<li><strong>workflow_graph.json</strong> - Complete workflow data in JSON format</li>')
-            content.append('</ul>')
-            content.append('<hr />')
-
-        # Summary statistics
-        content.append('<h2>Summary</h2>')
-        content.append(self._build_summary_table(result))
-        content.append('<hr />')
-
-        # Auto-generated diagrams (if enabled)
-        if auto_generate_diagrams:
-            diagrams_html = self._generate_diagrams(result)
-            if diagrams_html:
-                content.append('<h2>Workflow Diagrams</h2>')
-                content.append(diagrams_html)
-                content.append('<hr />')
-
-        # Detailed workflow nodes (limited to avoid size issues)
-        content.append('<h2>Workflow Operations (Sample)</h2>')
-
-        # Add note about data size
-        total_nodes = len(result.graph.nodes)
-        if total_nodes > 1000:
-            content.append(f'<ac:structured-macro ac:name="info">')
-            content.append('<ac:rich-text-body>')
-            content.append(f'<p>This repository contains <strong>{total_nodes:,}</strong> workflow nodes. ')
-            content.append('To keep this page manageable, only a sample of operations is shown below. ')
-            content.append('Download the <strong>workflow_graph.json</strong> attachment for complete details.</p>')
-            content.append('</ac:rich-text-body>')
-            content.append('</ac:structured-macro>')
-            content.append('<br />')
-
-        content.append(self._build_workflow_details(result))
-
-        return ''.join(content)
 
     def _build_summary_table(self, result: ScanResult) -> str:
         """Build summary statistics table.
@@ -561,3 +514,149 @@ class ConfluencePublisher:
         content.append('<p><em>Note: Install the "Mermaid Diagrams" app in Confluence to render this diagram.</em></p>')
         content.append('<br />')
         return ''.join(content)
+
+    def _build_parent_page_content(self, repo_name: str, result: ScanResult) -> str:
+        """Build parent page content - simple overview.
+
+        Args:
+            repo_name: Repository name
+            result: Scan result
+
+        Returns:
+            Confluence storage format HTML
+        """
+        from datetime import datetime
+
+        content = []
+        content.append('<h1>Workflow Documentation</h1>')
+        content.append('<p>This page contains automated workflow documentation for all scanned repositories.</p>')
+        content.append('<hr />')
+
+        content.append('<h2>Latest Scan</h2>')
+        content.append(f'<p><strong>Repository:</strong> <code>{repo_name}</code></p>')
+        content.append(f'<p><strong>Last Updated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
+        content.append(f'<p><strong>Files Scanned:</strong> {result.files_scanned:,}</p>')
+        content.append(f'<p><strong>Workflow Nodes:</strong> {len(result.graph.nodes):,}</p>')
+        content.append(f'<p><strong>Workflow Edges:</strong> {len(result.graph.edges):,}</p>')
+        content.append(f'<p><strong>Scan Time:</strong> {result.scan_time_seconds:.1f}s</p>')
+
+        content.append('<hr />')
+        content.append('<h2>Child Pages</h2>')
+        content.append('<p>Detailed information is organized into child pages:</p>')
+        content.append('<ul>')
+        content.append(f'<li><strong>{repo_name} - Summary & Statistics</strong>: Workflow breakdown and detailed operations</li>')
+        content.append(f'<li><strong>{repo_name} - Auto-Generated Diagrams</strong>: Visual workflow diagrams (if enabled)</li>')
+        content.append('</ul>')
+
+        content.append('<hr />')
+        content.append('<h2>Attachments</h2>')
+        content.append('<p>Downloadable files are attached to this page:</p>')
+        content.append('<ul>')
+        content.append(f'<li><strong>{repo_name}_workflow_graph.json</strong>: Complete workflow data in JSON format</li>')
+        content.append(f'<li><strong>{repo_name}_workflow_graph.html</strong>: Interactive visualization (download and open in browser)</li>')
+        content.append('</ul>')
+
+        return ''.join(content)
+
+    def _build_summary_page_content(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None) -> str:
+        """Build summary child page content (what was previously the main page).
+
+        Args:
+            result: Scan result
+            html_file: Path to HTML visualization
+            markdown_file: Path to Markdown documentation
+            json_file: Path to JSON data file
+
+        Returns:
+            Confluence storage format HTML
+        """
+        # This is essentially the old _build_page_content but without auto-diagrams
+        from datetime import datetime
+
+        content = []
+
+        # Header
+        content.append('<h1>Summary & Statistics</h1>')
+        content.append(f'<p><strong>Repository:</strong> <code>{result.repository_path}</code></p>')
+        content.append(f'<p><strong>Last Updated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
+        content.append(f'<p><strong>Files Scanned:</strong> {result.files_scanned}</p>')
+        content.append(f'<p><strong>Workflow Nodes:</strong> {len(result.graph.nodes)}</p>')
+        content.append(f'<p><strong>Workflow Edges:</strong> {len(result.graph.edges)}</p>')
+        content.append('<hr />')
+
+        # Summary statistics
+        content.append('<h2>Workflow Type Summary</h2>')
+        content.append(self._build_summary_table(result))
+        content.append('<hr />')
+
+        # Detailed workflow nodes (limited to avoid size issues)
+        content.append('<h2>Workflow Operations (Sample)</h2>')
+
+        # Add note about data size
+        total_nodes = len(result.graph.nodes)
+        if total_nodes > 1000:
+            content.append(f'<ac:structured-macro ac:name="info">')
+            content.append('<ac:rich-text-body>')
+            content.append(f'<p>This repository contains <strong>{total_nodes:,}</strong> workflow nodes. ')
+            content.append('To keep this page manageable, only a sample of operations is shown below. ')
+            content.append('Download the <strong>workflow_graph.json</strong> attachment from the parent page for complete details.</p>')
+            content.append('</ac:rich-text-body>')
+            content.append('</ac:structured-macro>')
+            content.append('<br />')
+
+        content.append(self._build_workflow_details(result))
+
+        return ''.join(content)
+
+    def _create_or_update_child_page(self, space_key: str, parent_id: str, title: str, content: str) -> Dict:
+        """Create or update a child page.
+
+        Args:
+            space_key: Confluence space key
+            parent_id: Parent page ID
+            title: Page title
+            content: Page content (Confluence storage format)
+
+        Returns:
+            Page data dictionary
+        """
+        existing_page = self._find_page(space_key, title)
+
+        if existing_page:
+            page_id = existing_page['id']
+            print(f"  Updating child page: {title}")
+
+            self.confluence.update_page(
+                page_id=page_id,
+                title=title,
+                body=content,
+                representation='storage'
+            )
+
+            # Ensure it's a child of the parent
+            # (In case it was moved or parent changed)
+            try:
+                self.confluence.update_page(
+                    page_id=page_id,
+                    title=title,
+                    body=content,
+                    parent_id=parent_id,
+                    representation='storage'
+                )
+            except:
+                pass  # Some Confluence versions don't support parent_id in update
+
+            return existing_page
+
+        else:
+            print(f"  Creating child page: {title}")
+
+            new_page = self.confluence.create_page(
+                space=space_key,
+                title=title,
+                body=content,
+                parent_id=parent_id,
+                representation='storage'
+            )
+
+            return new_page
