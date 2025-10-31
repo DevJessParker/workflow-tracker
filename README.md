@@ -2,7 +2,52 @@
 
 > *It's what's inside that counts*
 
-Pinata Code is a workflow analysis tool that scans your codebase to reveal and visualize data workflows. It analyzes C# and TypeScript/Angular repositories to identify database operations, API calls, file I/O, message queues, and data transformations, then generates interactive visualizations and automatically updates your Confluence documentation.
+**Pinata Code** is transforming from a standalone workflow analysis tool into a **production-ready, multi-tenant SaaS platform** for code workflow analysis and visualization.
+
+## 🚀 New: Production SaaS Platform
+
+This repository now contains a **complete monorepo structure** ready for production deployment:
+
+- 🎨 **React + Next.js 14** frontend (TypeScript + Tailwind CSS)
+- ⚡ **FastAPI + Python** backend (SQLAlchemy + Celery)
+- 🔍 **Existing scanning engine** (preserved and enhanced)
+- 🐳 **Docker Compose** for local development
+- 💳 **Stripe billing** integration ready
+- 🔐 **Clerk.dev authentication** ready
+- 📊 **Multi-tenant architecture** with organizations & teams
+
+### Quick Links
+
+- 📖 **[QUICKSTART.md](QUICKSTART.md)** - Start building the production SaaS
+- 📋 **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)** - 12-week roadmap
+- 💰 **[Revenue Strategy](docs/REVENUE_STRATEGY.md)** - Business model & pricing
+- 🏗️ **[Architecture](docs/ARCHITECTURE_SCALABLE_SAAS.md)** - Technical deep dive
+
+### Project Structure
+
+```
+pinata-code/
+├── frontend/              # Next.js 14 + React + TypeScript
+├── backend/               # FastAPI + SQLAlchemy + Celery
+├── scanner/               # Python scanning engine (existing code)
+├── infrastructure/        # Docker Compose + deployment configs
+├── docs/                  # Comprehensive documentation
+└── QUICKSTART.md          # Get started guide
+```
+
+### Revenue Model
+
+- **Free**: 1 repository, 10 scans/month
+- **Team ($49/mo)**: 10 repos, 1,000 scans/month
+- **Enterprise ($499/mo)**: Unlimited repos & scans
+
+---
+
+## 📦 Legacy: Standalone Tool
+
+The original Pinata Code workflow analysis tool **still works!** The code has been moved to `scanner/` and remains fully functional.
+
+Pinata Code analyzes C# and TypeScript/Angular repositories to identify database operations, API calls, file I/O, message queues, and data transformations, then generates interactive visualizations and automatically updates your Confluence documentation.
 
 ## Features
 
