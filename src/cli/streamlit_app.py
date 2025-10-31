@@ -38,8 +38,8 @@ print("=" * 60)
 
 
 st.set_page_config(
-    page_title="Workflow Tracker",
-    page_icon="🔄",
+    page_title="Pinata Code",
+    page_icon="🪅",
     layout="wide"
 )
 
@@ -91,7 +91,9 @@ def main():
     """Main Streamlit app."""
     print("main() function called - rendering UI")
 
-    st.title("🔄 Workflow Tracker")
+    st.title("🪅 Pinata Code")
+    st.markdown("*It's what's inside that counts*")
+    st.markdown("---")
     st.markdown("Analyze and visualize data workflows in your codebase")
 
     # Show import errors if any
@@ -882,10 +884,27 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
     # Clear previous diagram
     st.session_state.generated_diagram = None
 
-    # Create progress placeholders
-    progress_bar = st.progress(0)
+    # Create progress placeholders with custom styling
+    # Add custom CSS for rainbow gradient progress bar
+    st.markdown("""
+    <style>
+    div[data-testid="stProgress"] > div > div > div > div {
+        background: linear-gradient(90deg,
+            #667eea 0%,
+            #764ba2 14%,
+            #f093fb 28%,
+            #f5576c 42%,
+            #feca57 57%,
+            #48dbfb 71%,
+            #0abde3 85%,
+            #00d2d3 100%
+        ) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    progress_container = st.empty()  # Container for both progress bar and pinata
     status_text = st.empty()
-    duck_placeholder = st.empty()  # For pinata indicator
 
     try:
         # Build configuration
@@ -912,24 +931,47 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
             """Update progress bar and status text with pinata indicator."""
             if total > 0:
                 progress = current / total
-                progress_bar.progress(progress)
-
-                # Calculate pinata position (0-100% as percentage)
                 pinata_position = int(progress * 100)
 
-                # Create visual progress with pinata (flipped to face right)
-                pinata_html = f"""
-                <div style="position: relative; width: 100%; height: 30px; margin-top: -10px;">
+                # Create combined progress bar and pinata overlay
+                combined_html = f"""
+                <div style="position: relative; width: 100%; margin-bottom: 10px;">
+                    <div style="
+                        width: 100%;
+                        height: 8px;
+                        background: #f0f0f0;
+                        border-radius: 4px;
+                        overflow: hidden;
+                        position: relative;
+                    ">
+                        <div style="
+                            width: {pinata_position}%;
+                            height: 100%;
+                            background: linear-gradient(90deg,
+                                #667eea 0%,
+                                #764ba2 14%,
+                                #f093fb 28%,
+                                #f5576c 42%,
+                                #feca57 57%,
+                                #48dbfb 71%,
+                                #0abde3 85%,
+                                #00d2d3 100%
+                            );
+                            transition: width 0.3s ease-out;
+                        "></div>
+                    </div>
                     <div style="
                         position: absolute;
                         left: {pinata_position}%;
+                        top: -8px;
                         transform: translateX(-50%) scaleX(-1);
                         font-size: 28px;
                         transition: left 0.3s ease-out;
+                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
                     ">🪅</div>
                 </div>
                 """
-                duck_placeholder.markdown(pinata_html, unsafe_allow_html=True)
+                progress_container.markdown(combined_html, unsafe_allow_html=True)
 
             status_text.text(message)
 

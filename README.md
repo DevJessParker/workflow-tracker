@@ -1,8 +1,8 @@
-# Workflow Tracker
+# 🪅 Pinata Code
 
-> Automatically scan your codebase and generate interactive workflow documentation
+> *It's what's inside that counts*
 
-Workflow Tracker is a tool that analyzes C# and TypeScript/Angular repositories to identify and visualize data workflows. It detects database operations, API calls, file I/O, message queues, and data transformations, then generates interactive visualizations and automatically updates your Confluence documentation.
+Pinata Code is a workflow analysis tool that scans your codebase to reveal and visualize data workflows. It analyzes C# and TypeScript/Angular repositories to identify database operations, API calls, file I/O, message queues, and data transformations, then generates interactive visualizations and automatically updates your Confluence documentation.
 
 ## Features
 
