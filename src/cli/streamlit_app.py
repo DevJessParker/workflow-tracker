@@ -1033,32 +1033,34 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
                     <div style="
                         width: 100%;
                         height: 8px;
-                        background: #f0f0f0;
+                        background: linear-gradient(90deg,
+                            #667eea 0%,
+                            #764ba2 14%,
+                            #f093fb 28%,
+                            #f5576c 42%,
+                            #feca57 57%,
+                            #48dbfb 71%,
+                            #0abde3 85%,
+                            #00d2d3 100%
+                        );
                         border-radius: 4px;
                         overflow: hidden;
                         position: relative;
                     ">
                         <div style="
-                            width: {pinata_position}%;
+                            position: absolute;
+                            right: 0;
+                            width: {100 - pinata_position}%;
                             height: 100%;
-                            background: linear-gradient(90deg,
-                                #667eea 0%,
-                                #764ba2 14%,
-                                #f093fb 28%,
-                                #f5576c 42%,
-                                #feca57 57%,
-                                #48dbfb 71%,
-                                #0abde3 85%,
-                                #00d2d3 100%
-                            );
+                            background: #f0f0f0;
                             transition: width 0.3s ease-out;
                         "></div>
                     </div>
                     <div style="
                         position: absolute;
                         left: {pinata_position}%;
-                        top: -8px;
-                        transform: translateX(-50%) scaleX(-1);
+                        top: 4px;
+                        transform: translateX(-50%) translateY(-50%) scaleX(-1);
                         font-size: 28px;
                         transition: left 0.3s ease-out;
                         filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
