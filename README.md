@@ -52,12 +52,19 @@ pip install -e .
 # Build the Docker image
 docker build -t workflow-tracker .
 
-# Run a scan
+# Create config file first (important for performance!)
+cp config/config.example.yaml config/local.yaml
+# Edit config/local.yaml with your settings
+
+# Run a scan with config mounted
 docker run --rm \
   -v /path/to/your/repo:/repo:ro \
+  -v $(pwd)/config:/app/config:ro \
   -v $(pwd)/output:/app/output \
-  workflow-tracker scan --repo /repo
+  workflow-tracker scan --repo /repo --config /app/config/local.yaml
 ```
+
+**Note**: Always mount the config directory and specify `--config` flag to ensure exclusions are applied (node_modules, bin, obj, etc.).
 
 ### Configuration
 
@@ -156,15 +163,22 @@ Features:
 For easier local development with Docker:
 
 ```bash
-# Edit .env file with your settings
-cp .env.example .env
+# Step 1: Create config file (CRITICAL for performance!)
+cp config/config.example.yaml config/local.yaml
+# Edit config/local.yaml with your repository path and Confluence settings
 
-# Run the scanner
+# Step 2: Create .env file
+cp .env.example .env
+# Edit .env with your settings (repo path, Confluence credentials)
+
+# Step 3: Run the scanner
 docker-compose up workflow-tracker
 
 # Or run the GUI
 docker-compose up workflow-tracker-gui
 ```
+
+**⚠️ IMPORTANT**: The `config/local.yaml` file contains critical exclusions (node_modules, bin, obj, etc.). Without it, Docker will scan ALL files and take much longer! See [docs/SCAN_OPTIMIZATION.md](docs/SCAN_OPTIMIZATION.md) for details.
 
 ## Diagram Generation
 

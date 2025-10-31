@@ -21,7 +21,9 @@ services:
       - REPOSITORY_PATH=/repo
       # CI mode
       - CI_MODE=${CI_MODE:-false}
-    command: scan --repo /repo --publish
+    # IMPORTANT: Always use --config flag to load exclusions and settings
+    # Without this, Docker uses defaults which don't exclude node_modules, bin, obj, etc.
+    command: scan --repo /repo --config /app/config/local.yaml --publish
 
   # GUI mode (for local development)
   workflow-tracker-gui:
@@ -35,4 +37,5 @@ services:
       - ./output:/app/output
     environment:
       - REPOSITORY_PATH=/repo
-    command: gui --repo /repo
+    # GUI also uses config for exclusions
+    command: gui --repo /repo --config /app/config/local.yaml
