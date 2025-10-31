@@ -44,6 +44,49 @@ st.set_page_config(
 )
 
 
+def get_filter_options(result, filter_type):
+    """Extract available filter options from scan results.
+
+    Args:
+        result: ScanResult object containing graph with nodes
+        filter_type: One of "Module/Directory", "Database Table", "API Endpoint"
+
+    Returns:
+        Sorted list of unique values for the selected filter type
+    """
+    options = set()
+
+    if filter_type == "Module/Directory":
+        # Extract unique directory paths from file locations
+        for node in result.graph.nodes:
+            file_path = node.location.file_path
+            # Get directory components (e.g., "src/services/UserService.cs" -> ["src", "src/services"])
+            parts = file_path.split('/')
+            for i in range(1, len(parts)):
+                dir_path = '/'.join(parts[:i])
+                if dir_path:
+                    options.add(dir_path)
+            # Also add the full file path without extension as an option
+            if '.' in parts[-1]:
+                file_without_ext = '/'.join(parts[:-1]) + '/' + parts[-1].rsplit('.', 1)[0]
+                options.add(file_without_ext)
+
+    elif filter_type == "Database Table":
+        # Extract unique database table names
+        for node in result.graph.nodes:
+            if node.table_name:
+                options.add(node.table_name)
+
+    elif filter_type == "API Endpoint":
+        # Extract unique API endpoints
+        for node in result.graph.nodes:
+            if node.endpoint:
+                options.add(node.endpoint)
+
+    # Return sorted list
+    return sorted(list(options))
+
+
 def main():
     """Main Streamlit app."""
     print("main() function called - rendering UI")
@@ -113,11 +156,19 @@ def main():
             help="Choose what to filter the diagram by"
         )
 
-        filter_value = st.sidebar.text_input(
-            "Filter Value",
-            placeholder="e.g., Services/UserService",
-            help="Enter the module path, table name, or endpoint"
-        )
+        # Get available filter options from scan results
+        result = st.session_state.scan_result
+        filter_options = get_filter_options(result, filter_type)
+
+        if not filter_options:
+            st.sidebar.warning(f"No {filter_type.lower()} found in scan results")
+            filter_value = None
+        else:
+            filter_value = st.sidebar.selectbox(
+                "Select Filter",
+                options=filter_options,
+                help=f"Select from {len(filter_options)} available {filter_type.lower()}s"
+            )
 
         max_nodes = st.sidebar.slider(
             "Max Nodes",
@@ -136,7 +187,7 @@ def main():
                     max_nodes
                 )
             else:
-                st.sidebar.error("Please enter a filter value")
+                st.sidebar.error("Please select a filter value")
 
     # Display results if available
     if 'scan_result' in st.session_state:
