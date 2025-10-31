@@ -79,7 +79,12 @@ class WorkflowGraphBuilder:
                 print(f"WARNING: {error_msg}")
 
         # Analyze and create edges based on workflow patterns
-        self._infer_workflow_edges(result.graph)
+        edge_inference_config = self.config.get('scanner', {}).get('edge_inference', {})
+        if edge_inference_config.get('enabled', True):
+            print("\nInferring workflow edges...")
+            self._infer_workflow_edges(result.graph, edge_inference_config)
+        else:
+            print("\nSkipping edge inference (disabled in config)")
 
         result.scan_time_seconds = time.time() - start_time
 
@@ -145,7 +150,7 @@ class WorkflowGraphBuilder:
         for edge in source.edges:
             target.add_edge(edge)
 
-    def _infer_workflow_edges(self, graph: WorkflowGraph):
+    def _infer_workflow_edges(self, graph: WorkflowGraph, config: Dict[str, Any] = None):
         """Infer edges between nodes based on workflow patterns.
 
         This creates connections between related workflow steps, such as:
@@ -155,39 +160,52 @@ class WorkflowGraphBuilder:
 
         Args:
             graph: Workflow graph to analyze
+            config: Edge inference configuration
         """
-        nodes_by_file = {}
+        if config is None:
+            config = {}
 
-        # Group nodes by file
-        for node in graph.nodes:
-            file_path = node.location.file_path
-            if file_path not in nodes_by_file:
-                nodes_by_file[file_path] = []
-            nodes_by_file[file_path].append(node)
+        # Create proximity edges (nodes close together in same file)
+        if config.get('proximity_edges', True):
+            print("  Creating proximity edges...")
+            max_distance = config.get('max_line_distance', 20)
+            nodes_by_file = {}
 
-        # Create edges within each file based on line number proximity
-        for file_path, nodes in nodes_by_file.items():
-            # Sort nodes by line number
-            sorted_nodes = sorted(nodes, key=lambda n: n.location.line_number)
+            # Group nodes by file
+            for node in graph.nodes:
+                file_path = node.location.file_path
+                if file_path not in nodes_by_file:
+                    nodes_by_file[file_path] = []
+                nodes_by_file[file_path].append(node)
 
-            # Connect adjacent workflow operations (within 20 lines of each other)
-            for i in range(len(sorted_nodes) - 1):
-                current = sorted_nodes[i]
-                next_node = sorted_nodes[i + 1]
+            edge_count = 0
+            # Create edges within each file based on line number proximity
+            for file_path, nodes in nodes_by_file.items():
+                # Sort nodes by line number
+                sorted_nodes = sorted(nodes, key=lambda n: n.location.line_number)
 
-                line_distance = next_node.location.line_number - current.location.line_number
+                # Connect adjacent workflow operations
+                for i in range(len(sorted_nodes) - 1):
+                    current = sorted_nodes[i]
+                    next_node = sorted_nodes[i + 1]
 
-                if line_distance <= 20:  # Configurable threshold
-                    edge = WorkflowEdge(
-                        source=current.id,
-                        target=next_node.id,
-                        label=f"Sequential ({line_distance} lines)",
-                        metadata={'distance': line_distance}
-                    )
-                    graph.add_edge(edge)
+                    line_distance = next_node.location.line_number - current.location.line_number
+
+                    if line_distance <= max_distance:
+                        edge = WorkflowEdge(
+                            source=current.id,
+                            target=next_node.id,
+                            label=f"Sequential ({line_distance} lines)",
+                            metadata={'distance': line_distance}
+                        )
+                        graph.add_edge(edge)
+                        edge_count += 1
+
+            print(f"    Added {edge_count} proximity edges")
 
         # Create edges based on data flow patterns
-        self._infer_data_flow_edges(graph)
+        if config.get('data_flow_edges', True):
+            self._infer_data_flow_edges(graph)
 
     def _infer_data_flow_edges(self, graph: WorkflowGraph):
         """Infer edges based on common data flow patterns.
@@ -201,42 +219,65 @@ class WorkflowGraphBuilder:
             graph: Workflow graph to analyze
         """
         from ..models import WorkflowType
+        from collections import defaultdict
 
-        # Find common patterns
-        api_calls = graph.get_nodes_by_type(WorkflowType.API_CALL)
-        db_writes = graph.get_nodes_by_type(WorkflowType.DATABASE_WRITE)
-        db_reads = graph.get_nodes_by_type(WorkflowType.DATABASE_READ)
-        transforms = graph.get_nodes_by_type(WorkflowType.DATA_TRANSFORM)
+        print("  Inferring data flow edges...")
+
+        # Create a set of existing edges for O(1) lookup
+        existing_edges = {(e.source, e.target) for e in graph.edges}
+
+        # Group nodes by file and type for efficient lookup
+        nodes_by_file_and_type = defaultdict(lambda: defaultdict(list))
+        for node in graph.nodes:
+            nodes_by_file_and_type[node.location.file_path][node.type].append(node)
+
+        edge_count = 0
 
         # Pattern: API call followed by DB write (data ingestion)
-        for api_node in api_calls:
-            for db_node in db_writes:
-                if (api_node.location.file_path == db_node.location.file_path and
-                    db_node.location.line_number > api_node.location.line_number and
-                    db_node.location.line_number - api_node.location.line_number < 50):
+        # Only check within the same file
+        for file_path, types_dict in nodes_by_file_and_type.items():
+            api_calls = types_dict.get(WorkflowType.API_CALL, [])
+            db_writes = types_dict.get(WorkflowType.DATABASE_WRITE, [])
 
-                    # Check if edge doesn't already exist
-                    if not any(e.source == api_node.id and e.target == db_node.id for e in graph.edges):
-                        edge = WorkflowEdge(
-                            source=api_node.id,
-                            target=db_node.id,
-                            label="Data Ingestion",
-                            metadata={'pattern': 'api_to_db'}
-                        )
-                        graph.add_edge(edge)
+            for api_node in api_calls:
+                for db_node in db_writes:
+                    if (db_node.location.line_number > api_node.location.line_number and
+                        db_node.location.line_number - api_node.location.line_number < 50):
 
-        # Pattern: DB read followed by transform followed by output
-        for db_node in db_reads:
-            for transform_node in transforms:
-                if (db_node.location.file_path == transform_node.location.file_path and
-                    transform_node.location.line_number > db_node.location.line_number and
-                    transform_node.location.line_number - db_node.location.line_number < 30):
+                        # Check if edge doesn't already exist (O(1) lookup)
+                        if (api_node.id, db_node.id) not in existing_edges:
+                            edge = WorkflowEdge(
+                                source=api_node.id,
+                                target=db_node.id,
+                                label="Data Ingestion",
+                                metadata={'pattern': 'api_to_db'}
+                            )
+                            graph.add_edge(edge)
+                            existing_edges.add((api_node.id, db_node.id))
+                            edge_count += 1
 
-                    if not any(e.source == db_node.id and e.target == transform_node.id for e in graph.edges):
-                        edge = WorkflowEdge(
-                            source=db_node.id,
-                            target=transform_node.id,
-                            label="Data Processing",
-                            metadata={'pattern': 'db_to_transform'}
-                        )
-                        graph.add_edge(edge)
+        print(f"    Added {edge_count} data ingestion edges")
+
+        # Pattern: DB read followed by transform
+        edge_count = 0
+        for file_path, types_dict in nodes_by_file_and_type.items():
+            db_reads = types_dict.get(WorkflowType.DATABASE_READ, [])
+            transforms = types_dict.get(WorkflowType.DATA_TRANSFORM, [])
+
+            for db_node in db_reads:
+                for transform_node in transforms:
+                    if (transform_node.location.line_number > db_node.location.line_number and
+                        transform_node.location.line_number - db_node.location.line_number < 30):
+
+                        if (db_node.id, transform_node.id) not in existing_edges:
+                            edge = WorkflowEdge(
+                                source=db_node.id,
+                                target=transform_node.id,
+                                label="Data Processing",
+                                metadata={'pattern': 'db_to_transform'}
+                            )
+                            graph.add_edge(edge)
+                            existing_edges.add((db_node.id, transform_node.id))
+                            edge_count += 1
+
+        print(f"    Added {edge_count} data processing edges")

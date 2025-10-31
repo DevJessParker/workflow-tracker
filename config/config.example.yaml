@@ -48,6 +48,13 @@ scanner:
     message_queues: true # Message queue operations
     data_transforms: true # Data mapping/transformation
 
+  # Edge inference options (for connecting workflow nodes)
+  edge_inference:
+    enabled: true        # Set to false to skip edge inference (faster for large repos)
+    proximity_edges: true # Connect nodes within same file
+    data_flow_edges: true # Infer data flow patterns (API->DB, DB->Transform, etc.)
+    max_line_distance: 20 # Maximum lines between nodes to create proximity edge
+
 # Output options
 output:
   # Directory for generated artifacts
