@@ -36,7 +36,8 @@ def cli():
 @click.option('--output', '-o', default=None, help='Output directory')
 @click.option('--format', '-f', multiple=True, help='Output format(s): html, png, svg, json, markdown')
 @click.option('--publish/--no-publish', default=False, help='Publish to Confluence')
-def scan(repo, config, output, format, publish):
+@click.option('--auto-diagrams/--no-auto-diagrams', default=False, help='Auto-generate and publish diagrams to Confluence (CI mode)')
+def scan(repo, config, output, format, publish, auto_diagrams):
     """Scan a repository and generate workflow visualizations.
 
     Example:
@@ -107,7 +108,8 @@ def scan(repo, config, output, format, publish):
                 result,
                 html_file=output_files.get('html'),
                 markdown_file=output_files.get('markdown'),
-                json_file=output_files.get('json')
+                json_file=output_files.get('json'),
+                auto_generate_diagrams=auto_diagrams
             )
 
             console.print(f"\n[bold green]✓ Published to Confluence:[/bold green]")

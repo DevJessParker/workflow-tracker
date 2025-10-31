@@ -20,10 +20,13 @@ Workflow Tracker is a tool that analyzes C# and TypeScript/Angular repositories 
   - Static images (PNG, SVG)
   - JSON data export
   - Markdown documentation
+  - Focused Mermaid diagrams (auto-generated or manual)
 
 - **Confluence Integration**: Automatically publish workflow documentation to Confluence Cloud
+- **Auto-Generate Diagrams**: Embed focused Mermaid diagrams directly in Confluence (CI/CD mode)
+- **Manual Diagram Tools**: Create custom diagrams filtered by module, table, or endpoint
 - **CI/CD Ready**: Docker-based deployment for TeamCity and Octopus Deploy
-- **Local GUI**: Web-based interface for local development and debugging
+- **Local GUI**: Web-based interface with interactive diagram generation
 
 ## Quick Start
 
@@ -115,6 +118,22 @@ Scan and publish to Confluence:
 workflow-tracker scan --repo /path/to/repo --publish
 ```
 
+Scan and auto-generate diagrams in Confluence (CI/CD):
+
+```bash
+workflow-tracker scan --repo /path/to/repo --publish --auto-diagrams
+```
+
+Generate focused diagrams manually:
+
+```bash
+# After scanning, create diagrams from JSON results
+python tools/create_diagrams.py output/workflow_graph.json \
+  --module "Services/UserService" \
+  --format mermaid \
+  --output user_service_diagram
+```
+
 #### GUI Mode (Local Development)
 
 Launch the interactive web interface:
@@ -124,6 +143,13 @@ workflow-tracker gui --repo /path/to/repo
 ```
 
 Then open your browser to http://localhost:8501
+
+Features:
+- Scan repository with customizable options
+- **Generate diagrams interactively** using the sidebar
+- Filter by module, database table, or API endpoint
+- Download Mermaid diagrams for documentation
+- View and explore workflow nodes in real-time
 
 #### Docker Compose
 
@@ -140,6 +166,78 @@ docker-compose up workflow-tracker
 docker-compose up workflow-tracker-gui
 ```
 
+## Diagram Generation
+
+Workflow Tracker provides three ways to generate focused diagrams from your scan results:
+
+### 1. Manual CLI Tool (For Developers)
+
+Generate custom diagrams from scan results for comparing local changes:
+
+```bash
+# Generate Mermaid diagram for a specific module
+python tools/create_diagrams.py output/workflow_graph.json \
+  --module "Services/UserService" \
+  --format mermaid \
+  --output user_service
+
+# Generate diagram for a database table
+python tools/create_diagrams.py output/workflow_graph.json \
+  --table Users \
+  --format dot \
+  --output users_table
+
+# Generate diagram for an API endpoint
+python tools/create_diagrams.py output/workflow_graph.json \
+  --endpoint "/api/users" \
+  --format mermaid
+```
+
+**Supported formats:**
+- `mermaid` - For Markdown, GitHub, GitLab, Confluence
+- `dot` - Graphviz format for high-quality images
+- `plantuml` - For sequence diagrams
+
+### 2. Auto-Generate in CI/CD
+
+Configure automatic diagram generation and publishing to Confluence:
+
+```yaml
+# In config/local.yaml
+confluence:
+  auto_diagrams:
+    modules:
+      - "Services/UserService"
+      - "Controllers/UserController"
+    tables:
+      - "Users"
+      - "Orders"
+    endpoints:
+      - "/api/users"
+    max_nodes_per_diagram: 50
+```
+
+Then run with `--auto-diagrams` flag:
+
+```bash
+workflow-tracker scan --repo . --publish --auto-diagrams
+```
+
+Diagrams will be embedded directly in your Confluence page!
+
+### 3. Interactive GUI
+
+Generate diagrams on-demand in the web interface:
+
+1. Launch GUI: `workflow-tracker gui --repo .`
+2. Scan your repository
+3. Use the "Generate Diagrams" section in the sidebar
+4. Select filter type (Module, Table, or Endpoint)
+5. Enter filter value and click "Generate Diagram"
+6. Download the Mermaid code or copy/paste
+
+**See [docs/AUTO_DIAGRAMS.md](docs/AUTO_DIAGRAMS.md) for complete documentation.**
+
 ## CI/CD Integration
 
 ### TeamCity
@@ -148,7 +246,16 @@ docker-compose up workflow-tracker-gui
 
 ```bash
 #!/bin/bash
-bash ci-cd/teamcity-build.sh
+# With auto-diagram generation
+docker run --rm \
+  -v %system.teamcity.build.checkoutDir%:/repo:ro \
+  -e CONFLUENCE_URL=%env.CONFLUENCE_URL% \
+  -e CONFLUENCE_USERNAME=%env.CONFLUENCE_USERNAME% \
+  -e CONFLUENCE_API_TOKEN=%env.CONFLUENCE_API_TOKEN% \
+  -e CONFLUENCE_SPACE_KEY=%env.CONFLUENCE_SPACE_KEY% \
+  -e CI_MODE=true \
+  workflow-tracker:latest \
+  scan --repo /repo --publish --auto-diagrams
 ```
 
 2. Configure environment variables in TeamCity:
@@ -157,7 +264,9 @@ bash ci-cd/teamcity-build.sh
    - `CONFLUENCE_API_TOKEN`
    - `CONFLUENCE_SPACE_KEY`
 
-3. The workflow documentation will be automatically updated on each build.
+3. Update `config/local.yaml` with `auto_diagrams` configuration (see Diagram Generation section)
+
+4. The workflow documentation with embedded diagrams will be automatically updated on each build.
 
 ### Octopus Deploy
 
@@ -166,8 +275,16 @@ bash ci-cd/teamcity-build.sh
 2. Use the PowerShell script:
 
 ```powershell
-# Copy and run the Octopus Deploy script
-. ./ci-cd/octopus-deploy.ps1
+# With auto-diagram generation
+docker run --rm `
+  -v ${OctopusParameters['Repository.Path']}:/repo:ro `
+  -e CONFLUENCE_URL=${OctopusParameters['Confluence.Url']} `
+  -e CONFLUENCE_USERNAME=${OctopusParameters['Confluence.Username']} `
+  -e CONFLUENCE_API_TOKEN=${OctopusParameters['Confluence.ApiToken']} `
+  -e CONFLUENCE_SPACE_KEY=${OctopusParameters['Confluence.SpaceKey']} `
+  -e CI_MODE=true `
+  workflow-tracker:latest `
+  scan --repo /repo --publish --auto-diagrams
 ```
 
 3. Configure Octopus variables:
@@ -177,7 +294,9 @@ bash ci-cd/teamcity-build.sh
    - `Confluence.SpaceKey`
    - `Repository.Path`
 
-4. The workflow documentation will be updated with each production deployment.
+4. Update `config/local.yaml` with `auto_diagrams` configuration (see Diagram Generation section)
+
+5. The workflow documentation with embedded diagrams will be updated with each production deployment.
 
 ### GitHub Actions (Example)
 

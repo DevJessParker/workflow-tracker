@@ -42,7 +42,7 @@ class ConfluencePublisher:
                 cloud=True
             )
 
-    def publish(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None) -> str:
+    def publish(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None, auto_generate_diagrams: bool = False) -> str:
         """Publish workflow documentation to Confluence.
 
         Args:
@@ -50,6 +50,7 @@ class ConfluencePublisher:
             html_file: Path to HTML visualization file
             markdown_file: Path to Markdown documentation file
             json_file: Path to JSON data file
+            auto_generate_diagrams: If True, auto-generate and embed Mermaid diagrams
 
         Returns:
             URL of the created/updated Confluence page
@@ -61,7 +62,7 @@ class ConfluencePublisher:
         page_title = f"Workflow Documentation - {repo_name}"
 
         # Build page content
-        content = self._build_page_content(result, html_file, markdown_file, json_file)
+        content = self._build_page_content(result, html_file, markdown_file, json_file, auto_generate_diagrams)
 
         # Check if page already exists
         space_key = self.config['space_key']
@@ -128,7 +129,7 @@ class ConfluencePublisher:
         except Exception:
             return None
 
-    def _build_page_content(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None) -> str:
+    def _build_page_content(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None, auto_generate_diagrams: bool = False) -> str:
         """Build Confluence page content in storage format (XHTML).
 
         Args:
@@ -136,6 +137,7 @@ class ConfluencePublisher:
             html_file: Path to HTML visualization
             markdown_file: Path to Markdown documentation
             json_file: Path to JSON data file
+            auto_generate_diagrams: If True, auto-generate and embed Mermaid diagrams
 
         Returns:
             Confluence storage format content
@@ -169,6 +171,14 @@ class ConfluencePublisher:
         content.append('<h2>Summary</h2>')
         content.append(self._build_summary_table(result))
         content.append('<hr />')
+
+        # Auto-generated diagrams (if enabled)
+        if auto_generate_diagrams:
+            diagrams_html = self._generate_diagrams(result)
+            if diagrams_html:
+                content.append('<h2>Workflow Diagrams</h2>')
+                content.append(diagrams_html)
+                content.append('<hr />')
 
         # Detailed workflow nodes (limited to avoid size issues)
         content.append('<h2>Workflow Operations (Sample)</h2>')
@@ -327,3 +337,227 @@ class ConfluencePublisher:
 
         except Exception as e:
             print(f"  Warning: Could not attach file {attachment_name}: {str(e)}")
+
+    def _generate_diagrams(self, result: ScanResult) -> str:
+        """Generate Mermaid diagrams for configured modules, tables, and endpoints.
+
+        Args:
+            result: Scan result with workflow graph
+
+        Returns:
+            HTML content with embedded Mermaid diagrams
+        """
+        diagram_config = self.config.get('auto_diagrams', {})
+        if not diagram_config:
+            return ''
+
+        modules = diagram_config.get('modules', [])
+        tables = diagram_config.get('tables', [])
+        endpoints = diagram_config.get('endpoints', [])
+        max_nodes = diagram_config.get('max_nodes_per_diagram', 50)
+
+        content = []
+
+        # Add info about auto-generated diagrams
+        content.append('<ac:structured-macro ac:name="info">')
+        content.append('<ac:rich-text-body>')
+        content.append('<p>These diagrams were auto-generated based on your configuration. ')
+        content.append('They show focused views of specific workflows to help understand data flow.</p>')
+        content.append('</ac:rich-text-body>')
+        content.append('</ac:structured-macro>')
+        content.append('<br />')
+
+        # Generate diagrams for each module
+        for module in modules:
+            print(f"  Generating diagram for module: {module}")
+            diagram_html = self._create_module_diagram(result, module, max_nodes)
+            if diagram_html:
+                content.append(diagram_html)
+
+        # Generate diagrams for each table
+        for table in tables:
+            print(f"  Generating diagram for table: {table}")
+            diagram_html = self._create_table_diagram(result, table, max_nodes)
+            if diagram_html:
+                content.append(diagram_html)
+
+        # Generate diagrams for each endpoint
+        for endpoint in endpoints:
+            print(f"  Generating diagram for endpoint: {endpoint}")
+            diagram_html = self._create_endpoint_diagram(result, endpoint, max_nodes)
+            if diagram_html:
+                content.append(diagram_html)
+
+        if not content or len(content) == 2:  # Only info banner, no diagrams
+            return ''
+
+        return ''.join(content)
+
+    def _create_module_diagram(self, result: ScanResult, module_path: str, max_nodes: int) -> str:
+        """Create a Mermaid diagram for a specific module.
+
+        Args:
+            result: Scan result
+            module_path: Module path to filter
+            max_nodes: Maximum nodes to include
+
+        Returns:
+            HTML with Mermaid diagram
+        """
+        # Filter nodes to this module
+        filtered_nodes = [
+            node for node in result.graph.nodes
+            if module_path in node.location.file_path
+        ][:max_nodes]
+
+        if not filtered_nodes:
+            return ''
+
+        node_ids = {node.id for node in filtered_nodes}
+        filtered_edges = [
+            edge for edge in result.graph.edges
+            if edge.source in node_ids and edge.target in node_ids
+        ]
+
+        mermaid_code = self._build_mermaid_diagram(filtered_nodes, filtered_edges, f"Module: {module_path}")
+        return self._wrap_mermaid_in_confluence(mermaid_code, f"Workflow: {module_path}")
+
+    def _create_table_diagram(self, result: ScanResult, table_name: str, max_nodes: int) -> str:
+        """Create a Mermaid diagram for a specific database table.
+
+        Args:
+            result: Scan result
+            table_name: Table name to filter
+            max_nodes: Maximum nodes to include
+
+        Returns:
+            HTML with Mermaid diagram
+        """
+        # Filter nodes that operate on this table
+        filtered_nodes = [
+            node for node in result.graph.nodes
+            if node.table_name and table_name.lower() in node.table_name.lower()
+        ][:max_nodes]
+
+        if not filtered_nodes:
+            return ''
+
+        node_ids = {node.id for node in filtered_nodes}
+        filtered_edges = [
+            edge for edge in result.graph.edges
+            if edge.source in node_ids and edge.target in node_ids
+        ]
+
+        mermaid_code = self._build_mermaid_diagram(filtered_nodes, filtered_edges, f"Table: {table_name}")
+        return self._wrap_mermaid_in_confluence(mermaid_code, f"Database Table: {table_name}")
+
+    def _create_endpoint_diagram(self, result: ScanResult, endpoint: str, max_nodes: int) -> str:
+        """Create a Mermaid diagram for a specific API endpoint.
+
+        Args:
+            result: Scan result
+            endpoint: Endpoint to filter
+            max_nodes: Maximum nodes to include
+
+        Returns:
+            HTML with Mermaid diagram
+        """
+        # Filter nodes for this endpoint
+        filtered_nodes = [
+            node for node in result.graph.nodes
+            if node.endpoint and endpoint in node.endpoint
+        ][:max_nodes]
+
+        if not filtered_nodes:
+            return ''
+
+        node_ids = {node.id for node in filtered_nodes}
+        filtered_edges = [
+            edge for edge in result.graph.edges
+            if edge.source in node_ids and edge.target in node_ids
+        ]
+
+        mermaid_code = self._build_mermaid_diagram(filtered_nodes, filtered_edges, f"Endpoint: {endpoint}")
+        return self._wrap_mermaid_in_confluence(mermaid_code, f"API Endpoint: {endpoint}")
+
+    def _build_mermaid_diagram(self, nodes: list, edges: list, title: str) -> str:
+        """Build Mermaid flowchart code.
+
+        Args:
+            nodes: List of workflow nodes
+            edges: List of workflow edges
+            title: Diagram title
+
+        Returns:
+            Mermaid code
+        """
+        lines = []
+        lines.append("flowchart TD")
+
+        # Color scheme by type
+        type_colors = {
+            'api_call': '#2196F3',
+            'database_read': '#4CAF50',
+            'database_write': '#8BC34A',
+            'file_read': '#FF9800',
+            'file_write': '#FF5722',
+            'message_send': '#9C27B0',
+            'message_receive': '#673AB7',
+            'data_transform': '#FFEB3B'
+        }
+
+        # Create node definitions
+        node_id_map = {}
+        for i, node in enumerate(nodes):
+            node_id = f"N{i}"
+            node_id_map[node.id] = node_id
+
+            # Create label (truncate if too long)
+            label = node.name[:40]
+            if node.table_name:
+                label += f"<br/>{node.table_name}"
+            elif node.endpoint:
+                label += f"<br/>{node.endpoint[:30]}"
+
+            lines.append(f'    {node_id}["{label}"]')
+
+            # Add styling
+            node_type = node.type.value if hasattr(node.type, 'value') else str(node.type)
+            if node_type in type_colors:
+                lines.append(f"    style {node_id} fill:{type_colors[node_type]}")
+
+        # Create edges
+        for edge in edges:
+            source_id = node_id_map.get(edge.source)
+            target_id = node_id_map.get(edge.target)
+            if source_id and target_id:
+                label = edge.edge_type[:20] if hasattr(edge, 'edge_type') else ''
+                if label:
+                    lines.append(f"    {source_id} -->|{label}| {target_id}")
+                else:
+                    lines.append(f"    {source_id} --> {target_id}")
+
+        return '\n'.join(lines)
+
+    def _wrap_mermaid_in_confluence(self, mermaid_code: str, title: str) -> str:
+        """Wrap Mermaid code in Confluence macro format.
+
+        Args:
+            mermaid_code: Mermaid diagram code
+            title: Diagram title
+
+        Returns:
+            Confluence storage format HTML
+        """
+        content = []
+        content.append(f'<h3>{title}</h3>')
+        content.append('<ac:structured-macro ac:name="code">')
+        content.append('<ac:parameter ac:name="language">mermaid</ac:parameter>')
+        content.append('<ac:parameter ac:name="theme">Midnight</ac:parameter>')
+        content.append('<ac:plain-text-body><![CDATA[')
+        content.append(mermaid_code)
+        content.append(']]></ac:plain-text-body>')
+        content.append('</ac:structured-macro>')
+        content.append('<p><em>Note: Install the "Mermaid Diagrams" app in Confluence to render this diagram.</em></p>')
+        content.append('<br />')
+        return ''.join(content)

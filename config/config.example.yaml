@@ -22,6 +22,23 @@ confluence:
   # Parent page ID (optional - creates pages under this parent)
   parent_page_id: null
 
+  # Auto-diagram generation (used with --auto-diagrams flag)
+  # When enabled, automatically generates and embeds Mermaid diagrams in Confluence
+  auto_diagrams:
+    # Which modules/directories to create diagrams for
+    # Examples: ["Services", "Controllers", "Repositories"]
+    modules:
+      - "Services"
+      - "Controllers"
+    # Which database tables to diagram
+    # Example: ["Users", "Orders", "Products"]
+    tables: []
+    # Which API endpoints to diagram
+    # Example: ["/api/users", "/api/orders"]
+    endpoints: []
+    # Maximum nodes per diagram (keeps diagrams readable)
+    max_nodes_per_diagram: 50
+
 # Scanning options
 scanner:
   # File extensions to scan

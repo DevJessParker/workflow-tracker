@@ -65,6 +65,42 @@ def main():
             detect_transforms
         )
 
+    # Diagram generation section (only show if scan results exist)
+    if 'scan_result' in st.session_state:
+        st.sidebar.divider()
+        st.sidebar.subheader("📊 Generate Diagrams")
+
+        filter_type = st.sidebar.selectbox(
+            "Filter By",
+            ["Module/Directory", "Database Table", "API Endpoint"],
+            help="Choose what to filter the diagram by"
+        )
+
+        filter_value = st.sidebar.text_input(
+            "Filter Value",
+            placeholder="e.g., Services/UserService",
+            help="Enter the module path, table name, or endpoint"
+        )
+
+        max_nodes = st.sidebar.slider(
+            "Max Nodes",
+            min_value=10,
+            max_value=100,
+            value=50,
+            help="Maximum nodes to include in diagram"
+        )
+
+        if st.sidebar.button("🎨 Generate Diagram", type="secondary"):
+            if filter_value:
+                generate_diagram(
+                    st.session_state.scan_result,
+                    filter_type,
+                    filter_value,
+                    max_nodes
+                )
+            else:
+                st.sidebar.error("Please enter a filter value")
+
     # Display results if available
     if 'scan_result' in st.session_state:
         display_results(st.session_state.scan_result)
@@ -115,8 +151,137 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
             st.error(f"Error during scan: {str(e)}")
 
 
+def generate_diagram(result, filter_type, filter_value, max_nodes):
+    """Generate a Mermaid diagram based on filter."""
+    try:
+        # Filter nodes based on type
+        if filter_type == "Module/Directory":
+            filtered_nodes = [
+                node for node in result.graph.nodes
+                if filter_value in node.location.file_path
+            ][:max_nodes]
+            diagram_title = f"Module: {filter_value}"
+
+        elif filter_type == "Database Table":
+            filtered_nodes = [
+                node for node in result.graph.nodes
+                if node.table_name and filter_value.lower() in node.table_name.lower()
+            ][:max_nodes]
+            diagram_title = f"Table: {filter_value}"
+
+        else:  # API Endpoint
+            filtered_nodes = [
+                node for node in result.graph.nodes
+                if node.endpoint and filter_value in node.endpoint
+            ][:max_nodes]
+            diagram_title = f"Endpoint: {filter_value}"
+
+        if not filtered_nodes:
+            st.sidebar.warning(f"No nodes found matching '{filter_value}'")
+            return
+
+        # Filter edges
+        node_ids = {node.id for node in filtered_nodes}
+        filtered_edges = [
+            edge for edge in result.graph.edges
+            if edge.source in node_ids and edge.target in node_ids
+        ]
+
+        # Build Mermaid diagram
+        mermaid_code = build_mermaid_diagram(filtered_nodes, filtered_edges, diagram_title)
+
+        # Store in session state
+        st.session_state.generated_diagram = {
+            'code': mermaid_code,
+            'title': diagram_title,
+            'node_count': len(filtered_nodes),
+            'edge_count': len(filtered_edges)
+        }
+
+        st.sidebar.success(f"✓ Generated diagram with {len(filtered_nodes)} nodes!")
+
+    except Exception as e:
+        st.sidebar.error(f"Error generating diagram: {str(e)}")
+
+
+def build_mermaid_diagram(nodes, edges, title):
+    """Build Mermaid flowchart code."""
+    lines = []
+    lines.append("flowchart TD")
+
+    # Color scheme by type
+    type_colors = {
+        'api_call': '#2196F3',
+        'database_read': '#4CAF50',
+        'database_write': '#8BC34A',
+        'file_read': '#FF9800',
+        'file_write': '#FF5722',
+        'message_send': '#9C27B0',
+        'message_receive': '#673AB7',
+        'data_transform': '#FFEB3B'
+    }
+
+    # Create node definitions
+    node_id_map = {}
+    for i, node in enumerate(nodes):
+        node_id = f"N{i}"
+        node_id_map[node.id] = node_id
+
+        # Create label (truncate if too long)
+        label = node.name[:40].replace('"', "'")
+        if node.table_name:
+            label += f"<br/>{node.table_name}"
+        elif node.endpoint:
+            label += f"<br/>{node.endpoint[:30]}"
+
+        lines.append(f'    {node_id}["{label}"]')
+
+        # Add styling
+        node_type = node.type.value if hasattr(node.type, 'value') else str(node.type)
+        if node_type in type_colors:
+            lines.append(f"    style {node_id} fill:{type_colors[node_type]}")
+
+    # Create edges
+    for edge in edges:
+        source_id = node_id_map.get(edge.source)
+        target_id = node_id_map.get(edge.target)
+        if source_id and target_id:
+            lines.append(f"    {source_id} --> {target_id}")
+
+    return '\n'.join(lines)
+
+
 def display_results(result):
     """Display scan results."""
+    st.header("Scan Results")
+
+    # Display generated diagram if available
+    if 'generated_diagram' in st.session_state:
+        st.subheader("📊 Generated Diagram")
+        diagram = st.session_state.generated_diagram
+
+        st.info(f"**{diagram['title']}** - {diagram['node_count']} nodes, {diagram['edge_count']} connections")
+
+        # Display Mermaid code
+        st.code(diagram['code'], language='mermaid')
+
+        # Download button
+        st.download_button(
+            label="💾 Download Mermaid Code",
+            data=diagram['code'],
+            file_name=f"workflow_diagram_{diagram['title'].replace(':', '_').replace(' ', '_')}.mmd",
+            mime='text/plain'
+        )
+
+        st.markdown("""
+        **To use this diagram:**
+        - Copy the code above and paste into [Mermaid Live Editor](https://mermaid.live/)
+        - Add to Markdown files (GitHub, GitLab, etc.)
+        - Install "Mermaid Diagrams" app in Confluence to use there
+        """)
+
+        st.divider()
+
     st.header("Scan Results")
 
     # Summary metrics
