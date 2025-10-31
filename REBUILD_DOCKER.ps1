@@ -27,7 +27,7 @@ docker build --no-cache -t workflow-tracker .
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
-    Write-Host "✓ Docker image rebuilt successfully!" -ForegroundColor Green
+    Write-Host "SUCCESS: Docker image rebuilt successfully!" -ForegroundColor Green
     Write-Host ""
     Write-Host "To verify the fixes are included, run:" -ForegroundColor Cyan
     Write-Host "  docker run --rm workflow-tracker pip list | Select-String scipy" -ForegroundColor White
@@ -38,6 +38,6 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "  docker-compose up workflow-tracker" -ForegroundColor White
 } else {
     Write-Host ""
-    Write-Host "✗ Build failed. Check errors above." -ForegroundColor Red
+    Write-Host "ERROR: Build failed. Check errors above." -ForegroundColor Red
     exit 1
 }
