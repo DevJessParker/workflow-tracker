@@ -37,5 +37,14 @@ services:
       - ./output:/app/output
     environment:
       - REPOSITORY_PATH=/repo
-    # GUI also uses config for exclusions
-    command: gui --repo /repo --config /app/config/local.yaml
+      - WORKFLOW_TRACKER_CONFIG=/app/config/local.yaml
+      - WORKFLOW_TRACKER_REPO=/repo
+    # Run Streamlit directly (not through CLI wrapper) to avoid interactive prompts
+    entrypoint: ["streamlit", "run"]
+    command:
+      - /app/src/cli/streamlit_app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+      - --browser.serverAddress=0.0.0.0
+      - --browser.gatherUsageStats=false
