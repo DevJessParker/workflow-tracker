@@ -32,11 +32,12 @@ class WorkflowGraphBuilder:
 
         return scanners
 
-    def build(self, repository_path: str) -> ScanResult:
+    def build(self, repository_path: str, progress_callback=None) -> ScanResult:
         """Build workflow graph from repository.
 
         Args:
             repository_path: Path to repository to scan
+            progress_callback: Optional callback function(current, total, message) for progress updates
 
         Returns:
             ScanResult containing the workflow graph
@@ -66,6 +67,10 @@ class WorkflowGraphBuilder:
         files_to_scan = self._find_files(repository_path, include_extensions, exclude_dirs)
 
         print(f"✓ Found {len(files_to_scan):,} files to scan\n")
+
+        # Notify callback of total files discovered
+        if progress_callback:
+            progress_callback(0, len(files_to_scan), f"Found {len(files_to_scan):,} files to scan")
         print("="*60)
         print("SCANNING FILES")
         print("="*60)
@@ -107,10 +112,15 @@ class WorkflowGraphBuilder:
                         if len(display_path) > 50:
                             display_path = '...' + display_path[-47:]
 
-                        print(f"[{progress_pct:5.1f}%] {result.files_scanned:,}/{len(files_to_scan):,} files | "
-                              f"Nodes: {len(result.graph.nodes):,} | "
-                              f"Elapsed: {int(elapsed/60)}m {int(elapsed%60)}s | "
-                              f"ETA: {eta_str}")
+                        progress_msg = (f"[{progress_pct:5.1f}%] {result.files_scanned:,}/{len(files_to_scan):,} files | "
+                                       f"Nodes: {len(result.graph.nodes):,} | "
+                                       f"ETA: {eta_str}")
+
+                        print(progress_msg)
+
+                        # Notify callback
+                        if progress_callback:
+                            progress_callback(result.files_scanned, len(files_to_scan), progress_msg)
 
                         last_print_time = current_time
 
@@ -122,12 +132,22 @@ class WorkflowGraphBuilder:
         print("="*60)
         print(f"✓ Scanning complete: {result.files_scanned:,} files processed\n")
 
+        # Notify completion of file scanning
+        if progress_callback:
+            progress_callback(len(files_to_scan), len(files_to_scan),
+                            f"File scanning complete: {result.files_scanned:,} files processed")
+
         # Analyze and create edges based on workflow patterns
         edge_inference_config = self.config.get('scanner', {}).get('edge_inference', {})
         if edge_inference_config.get('enabled', True):
             print("="*60)
             print("INFERRING WORKFLOW EDGES")
             print("="*60)
+
+            # Notify callback about edge inference phase
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Inferring workflow edges...")
+
             self._infer_workflow_edges(result.graph, edge_inference_config)
         else:
             print("\n⚠️  Skipping edge inference (disabled in config)")

@@ -200,44 +200,62 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         st.error(f"Repository path not found: {repo_path}")
         return
 
-    with st.spinner("Scanning repository..."):
-        try:
-            # Build configuration
-            config = {
-                'scanner': {
-                    'include_extensions': [ext.strip() for ext in extensions],
-                    'exclude_dirs': ['node_modules', 'bin', 'obj', '.git', 'dist', 'build'],
-                    'detect': {
-                        'database': detect_db,
-                        'api_calls': detect_api,
-                        'file_io': detect_files,
-                        'message_queues': detect_msg,
-                        'data_transforms': detect_transform,
-                    }
-                },
-                'output': {
-                    'directory': './output',
-                    'formats': ['html', 'json']
+    # Create progress placeholders
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    try:
+        # Build configuration
+        config = {
+            'scanner': {
+                'include_extensions': [ext.strip() for ext in extensions],
+                'exclude_dirs': ['node_modules', 'bin', 'obj', '.git', 'dist', 'build'],
+                'detect': {
+                    'database': detect_db,
+                    'api_calls': detect_api,
+                    'file_io': detect_files,
+                    'message_queues': detect_msg,
+                    'data_transforms': detect_transform,
                 }
+            },
+            'output': {
+                'directory': './output',
+                'formats': ['html', 'json']
             }
+        }
 
-            # Scan repository
-            builder = WorkflowGraphBuilder(config)
-            result = builder.build(repo_path)
+        # Progress callback for real-time updates
+        def update_progress(current, total, message):
+            """Update progress bar and status text."""
+            if total > 0:
+                progress = current / total
+                progress_bar.progress(progress)
+            status_text.text(message)
 
-            # Render visualizations
-            renderer = WorkflowRenderer(config)
-            output_files = renderer.render(result)
+        # Scan repository with progress updates
+        status_text.text("🔍 Starting repository scan...")
+        builder = WorkflowGraphBuilder(config)
+        result = builder.build(repo_path, progress_callback=update_progress)
 
-            # Store in session state
-            st.session_state.scan_result = result
-            st.session_state.output_files = output_files
+        # Render visualizations
+        status_text.text("🎨 Rendering visualizations...")
+        renderer = WorkflowRenderer(config)
+        output_files = renderer.render(result)
 
-            st.success(f"✓ Scan complete! Found {len(result.graph.nodes)} workflow nodes.")
+        # Store in session state
+        st.session_state.scan_result = result
+        st.session_state.output_files = output_files
 
-        except Exception as e:
-            st.error(f"Error during scan: {str(e)}")
-            st.code(traceback.format_exc())
+        # Clear progress indicators and show success
+        progress_bar.empty()
+        status_text.empty()
+        st.success(f"✓ Scan complete! Found {len(result.graph.nodes)} workflow nodes in {result.scan_time_seconds:.1f}s")
+
+    except Exception as e:
+        progress_bar.empty()
+        status_text.empty()
+        st.error(f"Error during scan: {str(e)}")
+        st.code(traceback.format_exc())
 
 
 def generate_diagram(result, filter_type, filter_value, max_nodes):
