@@ -104,7 +104,8 @@ def scan(repo, config, output, format, publish):
             page_url = publisher.publish(
                 result,
                 html_file=output_files.get('html'),
-                markdown_file=output_files.get('markdown')
+                markdown_file=output_files.get('markdown'),
+                json_file=output_files.get('json')
             )
 
             console.print(f"\n[bold green]✓ Published to Confluence:[/bold green]")

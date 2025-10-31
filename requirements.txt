@@ -8,6 +8,7 @@ networkx==3.2.1
 graphviz==0.20.1
 plotly==5.18.0
 pydot==2.0.0
+scipy==1.11.4  # Required for Plotly spring layout
 
 # Confluence integration
 atlassian-python-api==3.41.10

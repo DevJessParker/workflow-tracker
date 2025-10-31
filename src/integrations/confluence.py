@@ -42,13 +42,14 @@ class ConfluencePublisher:
                 cloud=True
             )
 
-    def publish(self, result: ScanResult, html_file: str = None, markdown_file: str = None) -> str:
+    def publish(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None) -> str:
         """Publish workflow documentation to Confluence.
 
         Args:
             result: Scan result with workflow graph
             html_file: Path to HTML visualization file
             markdown_file: Path to Markdown documentation file
+            json_file: Path to JSON data file
 
         Returns:
             URL of the created/updated Confluence page
@@ -60,7 +61,7 @@ class ConfluencePublisher:
         page_title = f"Workflow Documentation - {repo_name}"
 
         # Build page content
-        content = self._build_page_content(result, html_file, markdown_file)
+        content = self._build_page_content(result, html_file, markdown_file, json_file)
 
         # Check if page already exists
         space_key = self.config['space_key']
@@ -97,9 +98,12 @@ class ConfluencePublisher:
             page_id = new_page['id']
             page_url = f"{self.config['url']}/wiki/spaces/{space_key}/pages/{page_id}"
 
-        # Attach HTML visualization if available
+        # Attach files
         if html_file and os.path.exists(html_file):
             self._attach_file(page_id, html_file, 'workflow_graph.html')
+
+        if json_file and os.path.exists(json_file):
+            self._attach_file(page_id, json_file, 'workflow_graph.json')
 
         print(f"✓ Published to Confluence: {page_url}")
         return page_url
@@ -124,13 +128,14 @@ class ConfluencePublisher:
         except Exception:
             return None
 
-    def _build_page_content(self, result: ScanResult, html_file: str = None, markdown_file: str = None) -> str:
+    def _build_page_content(self, result: ScanResult, html_file: str = None, markdown_file: str = None, json_file: str = None) -> str:
         """Build Confluence page content in storage format (XHTML).
 
         Args:
             result: Scan result
             html_file: Path to HTML visualization
             markdown_file: Path to Markdown documentation
+            json_file: Path to JSON data file
 
         Returns:
             Confluence storage format content
@@ -148,10 +153,16 @@ class ConfluencePublisher:
         content.append(f'<p><strong>Workflow Edges:</strong> {len(result.graph.edges)}</p>')
         content.append('<hr />')
 
-        # Add link to HTML visualization if attached
-        if html_file:
-            content.append('<h2>Interactive Visualization</h2>')
-            content.append('<p>Download the attached <code>workflow_graph.html</code> file to view an interactive visualization of the workflow graph.</p>')
+        # Add links to attachments
+        if html_file or json_file:
+            content.append('<h2>Downloads</h2>')
+            content.append('<p>The following files are attached to this page:</p>')
+            content.append('<ul>')
+            if html_file:
+                content.append('<li><strong>workflow_graph.html</strong> - Interactive visualization (download and open in browser)</li>')
+            if json_file:
+                content.append('<li><strong>workflow_graph.json</strong> - Complete workflow data in JSON format</li>')
+            content.append('</ul>')
             content.append('<hr />')
 
         # Summary statistics
@@ -159,8 +170,21 @@ class ConfluencePublisher:
         content.append(self._build_summary_table(result))
         content.append('<hr />')
 
-        # Detailed workflow nodes
-        content.append('<h2>Workflow Operations</h2>')
+        # Detailed workflow nodes (limited to avoid size issues)
+        content.append('<h2>Workflow Operations (Sample)</h2>')
+
+        # Add note about data size
+        total_nodes = len(result.graph.nodes)
+        if total_nodes > 1000:
+            content.append(f'<ac:structured-macro ac:name="info">')
+            content.append('<ac:rich-text-body>')
+            content.append(f'<p>This repository contains <strong>{total_nodes:,}</strong> workflow nodes. ')
+            content.append('To keep this page manageable, only a sample of operations is shown below. ')
+            content.append('Download the <strong>workflow_graph.json</strong> attachment for complete details.</p>')
+            content.append('</ac:rich-text-body>')
+            content.append('</ac:structured-macro>')
+            content.append('<br />')
+
         content.append(self._build_workflow_details(result))
 
         return ''.join(content)
@@ -200,11 +224,12 @@ class ConfluencePublisher:
 
         return table
 
-    def _build_workflow_details(self, result: ScanResult) -> str:
+    def _build_workflow_details(self, result: ScanResult, max_nodes_per_type: int = 50) -> str:
         """Build detailed workflow operation listings.
 
         Args:
             result: Scan result
+            max_nodes_per_type: Maximum number of nodes to show per type (to avoid page size issues)
 
         Returns:
             HTML content
@@ -221,10 +246,27 @@ class ConfluencePublisher:
         for workflow_type, nodes in sorted(nodes_by_type.items(), key=lambda x: x[0].value):
             type_display = workflow_type.value.replace('_', ' ').title()
 
-            content.append(f'<h3>{type_display} ({len(nodes)} operations)</h3>')
+            # Limit nodes to display
+            nodes_to_show = sorted(nodes, key=lambda n: n.location.file_path)[:max_nodes_per_type]
+            showing_all = len(nodes) <= max_nodes_per_type
+
+            title = f'{type_display} ({len(nodes)} operations'
+            if not showing_all:
+                title += f', showing first {max_nodes_per_type}'
+            title += ')'
+
+            content.append(f'<h3>{title}</h3>')
             content.append('<ac:structured-macro ac:name="expand">')
             content.append('<ac:parameter ac:name="title">View Details</ac:parameter>')
             content.append('<ac:rich-text-body>')
+
+            if not showing_all:
+                content.append('<ac:structured-macro ac:name="info">')
+                content.append('<ac:rich-text-body>')
+                content.append(f'<p>Showing first {max_nodes_per_type} of {len(nodes)} operations. ')
+                content.append('Download the JSON attachment for complete data.</p>')
+                content.append('</ac:rich-text-body>')
+                content.append('</ac:structured-macro>')
 
             # Create table for this type
             content.append('<table>')
@@ -235,7 +277,7 @@ class ConfluencePublisher:
             content.append('</tr></thead>')
             content.append('<tbody>')
 
-            for node in sorted(nodes, key=lambda n: n.location.file_path):
+            for node in nodes_to_show:
                 details = []
 
                 if node.table_name:
