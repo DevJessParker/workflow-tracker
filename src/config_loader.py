@@ -2,6 +2,7 @@
 
 import os
 import yaml
+import re
 from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
@@ -24,6 +25,7 @@ class Config:
 
         self.config_path = config_path or self._find_config_file()
         self.config = self._load_config()
+        self._expand_env_vars(self.config)
         self._override_with_env()
 
     def _find_config_file(self) -> str:
@@ -46,6 +48,35 @@ class Config:
         """Load configuration from YAML file."""
         with open(self.config_path, 'r') as f:
             return yaml.safe_load(f) or {}
+
+    def _expand_env_vars(self, obj: Any) -> Any:
+        """Recursively expand environment variables in configuration.
+
+        Supports syntax: ${VAR_NAME} or ${VAR_NAME:-default_value}
+
+        Examples:
+            ${CONFLUENCE_URL}                    # Required variable
+            ${REPO_PATH:-.}                      # Optional with default
+            ${CONFLUENCE_SPACE_KEY:-~YOURUSERID} # Optional with default
+        """
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                obj[key] = self._expand_env_vars(value)
+        elif isinstance(obj, list):
+            for i, item in enumerate(obj):
+                obj[i] = self._expand_env_vars(item)
+        elif isinstance(obj, str):
+            # Match ${VAR_NAME} or ${VAR_NAME:-default}
+            pattern = r'\$\{([^}:]+)(?::-(.*?))?\}'
+
+            def replace_var(match):
+                var_name = match.group(1)
+                default_value = match.group(2) if match.group(2) is not None else ''
+                return os.getenv(var_name, default_value)
+
+            return re.sub(pattern, replace_var, obj)
+
+        return obj
 
     def _override_with_env(self):
         """Override configuration with environment variables."""

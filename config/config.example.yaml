@@ -1,24 +1,38 @@
 # Workflow Tracker Configuration Example
-# Copy this to config/local.yaml and fill in your values
+# Copy this to config/local.yaml
+#
+# IMPORTANT: This file references environment variables from .env
+# All sensitive values (credentials, paths) should be in .env
+# This file contains structure, exclusions, and defaults
+#
+# Steps:
+# 1. Copy this file: cp config/config.example.yaml config/local.yaml
+# 2. Create .env: cp .env.example .env
+# 3. Edit .env with your credentials and paths
+# 4. Optionally customize exclusions and settings below
 
 # Repository to scan
 repository:
-  # Path to the repository (can be absolute or relative)
-  path: "/path/to/your/repo"
+  # Path to the repository (from .env: REPO_TO_SCAN)
+  # For Docker, this is set to /repo automatically
+  # For local Python, specify in .env
+  path: "${REPOSITORY_PATH:-.}"
   # Branch to scan (optional, defaults to current branch)
   branch: "main"
 
 # Confluence integration
 confluence:
-  # Confluence Cloud URL (e.g., https://yourcompany.atlassian.net)
-  url: "https://your-domain.atlassian.net"
-  # Your email address
-  username: "your.email@company.com"
-  # API token (generate from https://id.atlassian.com/manage-profile/security/api-tokens)
-  api_token: "your-api-token-here"
-  # Personal space key (e.g., "~123456789abcdef" or your user ID)
+  # All credentials come from .env file - single source of truth!
+  # Confluence Cloud URL (from .env: CONFLUENCE_URL)
+  url: "${CONFLUENCE_URL}"
+  # Your email address (from .env: CONFLUENCE_USERNAME)
+  username: "${CONFLUENCE_USERNAME}"
+  # API token (from .env: CONFLUENCE_API_TOKEN)
+  # Generate from: https://id.atlassian.com/manage-profile/security/api-tokens
+  api_token: "${CONFLUENCE_API_TOKEN}"
+  # Personal space key (from .env: CONFLUENCE_SPACE_KEY)
   # To find your personal space: Go to Confluence > Spaces > Personal
-  space_key: "~YOURUSERID"
+  space_key: "${CONFLUENCE_SPACE_KEY}"
   # Parent page ID (optional - creates pages under this parent)
   parent_page_id: null
 
