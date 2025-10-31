@@ -3,15 +3,38 @@
 import streamlit as st
 import os
 import sys
+import traceback
 from pathlib import Path
+
+# Startup diagnostic
+print("=" * 60)
+print("WORKFLOW TRACKER GUI - STARTING UP")
+print("=" * 60)
+print(f"Python version: {sys.version}")
+print(f"Working directory: {os.getcwd()}")
+print(f"Script location: {__file__}")
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+print(f"Added to sys.path: {str(Path(__file__).parent.parent.parent)}")
 
-from src.config_loader import Config
-from src.graph.builder import WorkflowGraphBuilder
-from src.graph.renderer import WorkflowRenderer
-from src.models import WorkflowType
+# Try importing with error handling
+print("\nAttempting to import modules...")
+try:
+    from src.config_loader import Config
+    from src.graph.builder import WorkflowGraphBuilder
+    from src.graph.renderer import WorkflowRenderer
+    from src.models import WorkflowType
+    IMPORTS_OK = True
+    IMPORT_ERROR = None
+    print("✓ All modules imported successfully")
+except Exception as e:
+    IMPORTS_OK = False
+    IMPORT_ERROR = str(e)
+    print(f"✗ ERROR: Failed to import modules: {e}")
+    traceback.print_exc()
+
+print("=" * 60)
 
 
 st.set_page_config(
@@ -23,8 +46,22 @@ st.set_page_config(
 
 def main():
     """Main Streamlit app."""
+    print("main() function called - rendering UI")
+
     st.title("🔄 Workflow Tracker")
     st.markdown("Analyze and visualize data workflows in your codebase")
+
+    # Show import errors if any
+    if not IMPORTS_OK:
+        print(f"WARNING: Displaying import error to user: {IMPORT_ERROR}")
+        st.error("⚠️ Failed to load required modules!")
+        st.code(IMPORT_ERROR)
+        st.info("This usually means there's a configuration or dependency issue. Check Docker logs for details.")
+        return
+
+    # Show status indicator
+    print("Imports OK - displaying GUI")
+    st.sidebar.success("✅ GUI Ready")
 
     # Sidebar configuration
     st.sidebar.header("Configuration")
@@ -149,6 +186,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         except Exception as e:
             st.error(f"Error during scan: {str(e)}")
+            st.code(traceback.format_exc())
 
 
 def generate_diagram(result, filter_type, filter_value, max_nodes):
@@ -202,6 +240,7 @@ def generate_diagram(result, filter_type, filter_value, max_nodes):
 
     except Exception as e:
         st.sidebar.error(f"Error generating diagram: {str(e)}")
+        st.sidebar.code(traceback.format_exc())
 
 
 def build_mermaid_diagram(nodes, edges, title):
@@ -385,4 +424,11 @@ def display_results(result):
 
 
 if __name__ == '__main__':
-    main()
+    print("\nExecuting main() function...")
+    try:
+        main()
+        print("main() completed successfully")
+    except Exception as e:
+        print(f"FATAL ERROR in main(): {e}")
+        traceback.print_exc()
+        raise

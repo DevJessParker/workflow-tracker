@@ -1,12 +1,13 @@
 # Workflow Tracker - Docker Image for CI/CD
 FROM python:3.11-slim
 
-# Install system dependencies for graphviz
+# Install system dependencies for graphviz and curl (for health checks)
 RUN apt-get update && apt-get install -y \
     graphviz \
     libgraphviz-dev \
     pkg-config \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

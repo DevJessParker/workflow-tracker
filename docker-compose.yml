@@ -43,3 +43,10 @@ services:
     # Configuration is in .streamlit/config.toml (copied during Docker build)
     entrypoint: ["streamlit", "run"]
     command: ["/app/src/cli/streamlit_app.py"]
+    # Health check to verify Streamlit is running and responsive
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
