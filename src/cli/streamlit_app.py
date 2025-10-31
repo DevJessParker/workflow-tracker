@@ -143,6 +143,16 @@ def main():
     st.markdown("---")
     st.markdown("Analyze and visualize data workflows in your codebase")
 
+    # Remove blue background from title
+    st.markdown("""
+    <style>
+    h1 {
+        background-color: transparent !important;
+        padding: 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # Show import errors if any
     if not IMPORTS_OK:
         print(f"WARNING: Displaying import error to user: {IMPORT_ERROR}")
@@ -163,6 +173,10 @@ def main():
         st.session_state.generated_diagram = None
     if 'scan_complete_flag' not in st.session_state:
         st.session_state.scan_complete_flag = False
+    if 'scan_running' not in st.session_state:
+        st.session_state.scan_running = False
+    if 'stop_scan' not in st.session_state:
+        st.session_state.stop_scan = False
 
     # Check if scan results exist
     has_results = st.session_state.scan_result is not None
@@ -203,35 +217,14 @@ def render_scan_tab():
     """Render the scan configuration and execution tab."""
     st.header("Repository Scanner")
 
-    # Show results summary at the top if available
-    if st.session_state.scan_result is not None:
-        result = st.session_state.scan_result
-        st.success(f"✅ Scan completed successfully!")
+    # Create 2/3 and 1/3 layout
+    config_col, results_col = st.columns([2, 1])
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Files Scanned", f"{result.files_scanned:,}")
-        with col2:
-            st.metric("Workflow Nodes", f"{len(result.graph.nodes):,}")
-        with col3:
-            st.metric("Connections", f"{len(result.graph.edges):,}")
-        with col4:
-            st.metric("Scan Time", f"{result.scan_time_seconds:.1f}s")
+    with config_col:
+        # Configuration form
+        with st.form("scan_config_form"):
+            st.markdown("**Configure and run workflow analysis**")
 
-        if result.errors:
-            with st.expander(f"⚠️ Errors ({len(result.errors)})", expanded=False):
-                for error in result.errors[:10]:  # Show first 10
-                    st.text(error)
-
-        st.divider()
-
-    # Compact configuration form
-    with st.form("scan_config_form"):
-        st.markdown("**Configure and run workflow analysis**")
-
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
             # Repository path
             default_repo = os.environ.get('WORKFLOW_TRACKER_REPO', '.')
             repo_path = st.text_input(
@@ -247,31 +240,79 @@ def render_scan_tab():
                 help="Comma-separated list of file extensions to scan"
             )
 
-        with col2:
             st.markdown("**Detection Options**")
-            detect_database = st.checkbox("Database Operations", value=True)
-            detect_api = st.checkbox("API Calls", value=True)
-            detect_files = st.checkbox("File I/O", value=True)
-            detect_messages = st.checkbox("Message Queues", value=True)
-            detect_transforms = st.checkbox("Data Transforms", value=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                detect_database = st.checkbox("Database Operations", value=True)
+                detect_api = st.checkbox("API Calls", value=True)
+                detect_files = st.checkbox("File I/O", value=True)
+            with col2:
+                detect_messages = st.checkbox("Message Queues", value=True)
+                detect_transforms = st.checkbox("Data Transforms", value=True)
 
-        # Scan button inside form
-        submitted = st.form_submit_button("🔍 Start Scan", type="primary", use_container_width=True)
-
-    # Process scan when form is submitted
-    if submitted:
-        # Create a compact progress container
-        with st.container():
-            st.markdown("### Scanning Progress")
-            scan_repository(
-                repo_path,
-                extensions.split(','),
-                detect_database,
-                detect_api,
-                detect_files,
-                detect_messages,
-                detect_transforms
+            # Scan button inside form (disabled when scanning)
+            submitted = st.form_submit_button(
+                "🔍 Start Scan" if not st.session_state.scan_running else "⏳ Scanning...",
+                type="primary",
+                use_container_width=True,
+                disabled=st.session_state.scan_running
             )
+
+        # Process scan when form is submitted
+        if submitted and not st.session_state.scan_running:
+            # Store scan parameters in session state
+            st.session_state.scan_params = {
+                'repo_path': repo_path,
+                'extensions': extensions.split(','),
+                'detect_database': detect_database,
+                'detect_api': detect_api,
+                'detect_files': detect_files,
+                'detect_messages': detect_messages,
+                'detect_transforms': detect_transforms
+            }
+            st.session_state.scan_running = True
+            st.session_state.stop_scan = False
+            st.rerun()
+
+        # Progress section (shown when scanning)
+        if st.session_state.scan_running:
+            st.divider()
+            st.markdown("### Scanning Progress")
+
+            # Stop button
+            if st.button("⏹️ Stop Scan", type="secondary", use_container_width=True, key="stop_scan_button"):
+                st.session_state.stop_scan = True
+
+            # Run the scan with stored parameters
+            if hasattr(st.session_state, 'scan_params'):
+                params = st.session_state.scan_params
+                scan_repository(
+                    params['repo_path'],
+                    params['extensions'],
+                    params['detect_database'],
+                    params['detect_api'],
+                    params['detect_files'],
+                    params['detect_messages'],
+                    params['detect_transforms']
+                )
+
+    with results_col:
+        # Show results summary if available
+        if st.session_state.scan_result is not None:
+            result = st.session_state.scan_result
+            st.success("✅ Scan Complete!")
+
+            st.metric("Files Scanned", f"{result.files_scanned:,}")
+            st.metric("Workflow Nodes", f"{len(result.graph.nodes):,}")
+            st.metric("Connections", f"{len(result.graph.edges):,}")
+            st.metric("Scan Time", f"{result.scan_time_seconds:.1f}s")
+
+            if result.errors:
+                with st.expander(f"⚠️ Errors ({len(result.errors)})", expanded=False):
+                    for error in result.errors[:10]:  # Show first 10
+                        st.text(error)
+        else:
+            st.info("Run a scan to see results here")
 
 
 def render_mermaid(mermaid_code, height=600):
@@ -1022,6 +1063,10 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         # Progress callback for real-time updates
         def update_progress(current, total, message):
             """Update progress bar and status text with pinata indicator."""
+            # Check if stop was requested
+            if st.session_state.stop_scan:
+                raise KeyboardInterrupt("Scan stopped by user")
+
             if total > 0:
                 progress = current / total
                 pinata_position = int(progress * 100)
@@ -1091,13 +1136,23 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Set flag to prevent rerun loop, then trigger rerun to show tabs
+        # Reset scan state and trigger rerun to show tabs
+        st.session_state.scan_running = False
         st.session_state.scan_complete_flag = True
+        st.rerun()
+
+    except KeyboardInterrupt as e:
+        # Graceful stop requested by user
+        progress_placeholder.empty()
+        status_placeholder.empty()
+        st.session_state.scan_running = False
+        st.warning(f"⏹️ Scan stopped by user")
         st.rerun()
 
     except Exception as e:
         progress_placeholder.empty()
         status_placeholder.empty()
+        st.session_state.scan_running = False
         st.error(f"Error during scan: {str(e)}")
         st.code(traceback.format_exc())
 
