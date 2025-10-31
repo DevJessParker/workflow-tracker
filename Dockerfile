@@ -29,6 +29,6 @@ RUN mkdir -p /app/output
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Default command
-ENTRYPOINT ["python", "-m", "src.cli.main"]
+# Default command - use the installed console script
+ENTRYPOINT ["workflow-tracker"]
 CMD ["--help"]
