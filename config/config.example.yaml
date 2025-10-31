@@ -69,6 +69,9 @@ output:
 
 # Visualization options
 visualization:
+  # Maximum nodes for HTML/PNG/SVG rendering (prevents hanging on large graphs)
+  # Graphs larger than this will only generate JSON/Markdown
+  max_nodes: 5000
   # Graph layout algorithm (dot, neato, fdp, sfdp, circo, twopi)
   layout: "dot"
   # Include source code snippets in nodes

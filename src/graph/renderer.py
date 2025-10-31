@@ -51,8 +51,21 @@ class WorkflowRenderer:
 
         output_files = {}
 
-        # Convert to NetworkX graph for easier manipulation
-        nx_graph = self._to_networkx(result.graph)
+        # Check graph size - skip heavy rendering for very large graphs
+        node_count = len(result.graph.nodes)
+        max_nodes_for_visualization = self.config.get('visualization', {}).get('max_nodes', 5000)
+
+        if node_count > max_nodes_for_visualization:
+            print(f"Graph has {node_count:,} nodes (limit: {max_nodes_for_visualization:,})")
+            print(f"Skipping HTML/PNG/SVG rendering to avoid long processing times")
+            print(f"Tip: Use JSON output for large graphs, or increase 'visualization.max_nodes' in config")
+            # Remove visual formats from the list
+            formats = [f for f in formats if f not in ['html', 'png', 'svg']]
+
+        # Convert to NetworkX graph for easier manipulation (only if needed for visual formats)
+        nx_graph = None
+        if any(f in formats for f in ['html', 'png', 'svg']):
+            nx_graph = self._to_networkx(result.graph)
 
         for fmt in formats:
             try:
