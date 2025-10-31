@@ -75,7 +75,9 @@ def scan(repo, config, output, format, publish):
         _display_results(result)
 
         # Render outputs
-        console.print("\n[bold]Rendering outputs...[/bold]")
+        console.print("\n" + "="*60)
+        console.print("[bold]RENDERING OUTPUTS[/bold]")
+        console.print("="*60)
         renderer = WorkflowRenderer(cfg.config)
         output_files = renderer.render(result)
 

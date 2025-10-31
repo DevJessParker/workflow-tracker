@@ -53,10 +53,24 @@ class WorkflowGraphBuilder:
         include_extensions = scanner_config.get('include_extensions', ['.cs', '.ts', '.js'])
         exclude_dirs = scanner_config.get('exclude_dirs', [])
 
+        print("\n" + "="*60)
+        print("SCANNING CONFIGURATION")
+        print("="*60)
+        print(f"Repository: {repository_path}")
+        print(f"File types: {', '.join(include_extensions)}")
+        print(f"Excluding: {', '.join(exclude_dirs[:5])}{'...' if len(exclude_dirs) > 5 else ''}")
+        print("="*60 + "\n")
+
         # Find all files to scan
+        print("🔍 Discovering files...")
         files_to_scan = self._find_files(repository_path, include_extensions, exclude_dirs)
 
-        print(f"Found {len(files_to_scan)} files to scan")
+        print(f"✓ Found {len(files_to_scan):,} files to scan\n")
+        print("="*60)
+        print("SCANNING FILES")
+        print("="*60)
+
+        last_print_time = time.time()
 
         # Scan each file
         for file_path in files_to_scan:
@@ -70,21 +84,53 @@ class WorkflowGraphBuilder:
                     self._merge_graphs(result.graph, file_graph)
                     result.files_scanned += 1
 
-                    if result.files_scanned % 10 == 0:
-                        print(f"Scanned {result.files_scanned}/{len(files_to_scan)} files...")
+                    current_time = time.time()
+
+                    # Print progress every 10 files OR every 5 seconds
+                    if result.files_scanned % 10 == 0 or (current_time - last_print_time) >= 5:
+                        elapsed = current_time - start_time
+                        progress_pct = (result.files_scanned / len(files_to_scan)) * 100
+
+                        # Calculate estimated time remaining
+                        if result.files_scanned > 0:
+                            avg_time_per_file = elapsed / result.files_scanned
+                            remaining_files = len(files_to_scan) - result.files_scanned
+                            eta_seconds = avg_time_per_file * remaining_files
+                            eta_minutes = int(eta_seconds / 60)
+                            eta_seconds_remainder = int(eta_seconds % 60)
+                            eta_str = f"{eta_minutes}m {eta_seconds_remainder}s"
+                        else:
+                            eta_str = "calculating..."
+
+                        # Get relative file path for display
+                        display_path = file_path.replace(repository_path, '')
+                        if len(display_path) > 50:
+                            display_path = '...' + display_path[-47:]
+
+                        print(f"[{progress_pct:5.1f}%] {result.files_scanned:,}/{len(files_to_scan):,} files | "
+                              f"Nodes: {len(result.graph.nodes):,} | "
+                              f"Elapsed: {int(elapsed/60)}m {int(elapsed%60)}s | "
+                              f"ETA: {eta_str}")
+
+                        last_print_time = current_time
 
             except Exception as e:
                 error_msg = f"Error scanning {file_path}: {str(e)}"
                 result.errors.append(error_msg)
-                print(f"WARNING: {error_msg}")
+                print(f"⚠️  WARNING: {error_msg}")
+
+        print("="*60)
+        print(f"✓ Scanning complete: {result.files_scanned:,} files processed\n")
 
         # Analyze and create edges based on workflow patterns
         edge_inference_config = self.config.get('scanner', {}).get('edge_inference', {})
         if edge_inference_config.get('enabled', True):
-            print("\nInferring workflow edges...")
+            print("="*60)
+            print("INFERRING WORKFLOW EDGES")
+            print("="*60)
             self._infer_workflow_edges(result.graph, edge_inference_config)
         else:
-            print("\nSkipping edge inference (disabled in config)")
+            print("\n⚠️  Skipping edge inference (disabled in config)")
 
         result.scan_time_seconds = time.time() - start_time
 

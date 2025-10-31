@@ -69,6 +69,7 @@ class WorkflowRenderer:
 
         for fmt in formats:
             try:
+                print(f"  → Generating {fmt.upper()}...", end='', flush=True)
                 if fmt == 'html':
                     output_files['html'] = self._render_html(result, nx_graph)
                 elif fmt == 'png':
@@ -80,9 +81,11 @@ class WorkflowRenderer:
                 elif fmt == 'markdown':
                     output_files['markdown'] = self._render_markdown(result)
                 else:
-                    print(f"Warning: Unknown format '{fmt}'")
+                    print(f" Unknown format")
+                    continue
+                print(f" ✓")
             except Exception as e:
-                print(f"Error rendering {fmt}: {str(e)}")
+                print(f" ✗ Error: {str(e)}")
 
         return output_files
 
