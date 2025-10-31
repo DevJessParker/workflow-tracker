@@ -105,8 +105,16 @@ def main():
     # Show status indicator
     print("Imports OK - displaying GUI")
 
+    # Initialize session state keys if they don't exist
+    if 'scan_result' not in st.session_state:
+        st.session_state.scan_result = None
+    if 'output_files' not in st.session_state:
+        st.session_state.output_files = None
+    if 'generated_diagram' not in st.session_state:
+        st.session_state.generated_diagram = None
+
     # Check if scan results exist
-    has_results = 'scan_result' in st.session_state
+    has_results = st.session_state.scan_result is not None
 
     # Create tabbed interface
     if not has_results:
@@ -380,31 +388,80 @@ def render_database_schema_tab():
 
     st.divider()
 
-    # Table details
+    # Search bar for filtering tables
     st.subheader("Tables & Operations")
+    search_query = st.text_input("🔍 Search Tables", placeholder="Type to filter tables...", key="table_search")
 
-    for table_name, table_data in sorted(schema_info['tables'].items()):
+    # Filter tables based on search
+    filtered_tables = {
+        name: data for name, data in schema_info['tables'].items()
+        if not search_query or search_query.lower() in name.lower()
+    }
+
+    if not filtered_tables:
+        st.warning(f"No tables found matching '{search_query}'")
+    else:
+        st.caption(f"Showing {len(filtered_tables)} of {len(schema_info['tables'])} tables")
+
+    for table_name, table_data in sorted(filtered_tables.items()):
         with st.expander(f"📊 {table_name}", expanded=False):
-            # Operations Breakdown - Visual Chart
+            # Operations Breakdown - Styled Circles
             st.markdown("### Operations Breakdown")
-            import plotly.graph_objects as go
 
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=['Read', 'Write'],
-                    y=[table_data['read_count'], table_data['write_count']],
-                    marker_color=['#4CAF50', '#FF9800'],
-                    text=[table_data['read_count'], table_data['write_count']],
-                    textposition='auto',
-                )
-            ])
-            fig.update_layout(
-                title=f"{table_name} Operations",
-                yaxis_title="Count",
-                height=300,
-                showlegend=False
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            # Create three circles with counts
+            circle_html = f"""
+            <div style="display: flex; justify-content: center; gap: 40px; margin: 20px 0;">
+                <div style="text-align: center;">
+                    <div style="
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #4CAF50, #66BB6A);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 28px;
+                        font-weight: bold;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    ">{table_data['read_count']}</div>
+                    <div style="margin-top: 10px; font-weight: 500; color: #4CAF50;">Reads</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #FF9800, #FFB74D);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 28px;
+                        font-weight: bold;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    ">{table_data['write_count']}</div>
+                    <div style="margin-top: 10px; font-weight: 500; color: #FF9800;">Writes</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #2196F3, #64B5F6);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 28px;
+                        font-weight: bold;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    ">{table_data['total_operations']}</div>
+                    <div style="margin-top: 10px; font-weight: 500; color: #2196F3;">Total</div>
+                </div>
+            </div>
+            """
+            st.markdown(circle_html, unsafe_allow_html=True)
 
             # Model/Schema Definition Path
             if table_data.get('model_path'):
@@ -829,6 +886,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
     # Create progress placeholders
     progress_bar = st.progress(0)
     status_text = st.empty()
+    duck_placeholder = st.empty()
 
     try:
         # Build configuration
@@ -852,10 +910,18 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         # Progress callback for real-time updates
         def update_progress(current, total, message):
-            """Update progress bar and status text."""
+            """Update progress bar and status text with rubber duck."""
             if total > 0:
                 progress = current / total
                 progress_bar.progress(progress)
+
+                # Calculate duck position (0-100% as percentage)
+                duck_position = int(progress * 100)
+
+                # Create visual progress with duck
+                padding_left = " " * (duck_position // 2)  # Rough positioning
+                duck_placeholder.markdown(f"<div style='font-size: 24px;'>{padding_left}🦆</div>", unsafe_allow_html=True)
+
             status_text.text(message)
 
         # Scan repository with progress updates
@@ -875,6 +941,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         # Clear progress indicators and show success
         progress_bar.empty()
         status_text.empty()
+        duck_placeholder.empty()
         st.success(f"✓ Scan complete! Found {len(result.graph.nodes)} workflow nodes in {result.scan_time_seconds:.1f}s")
         st.info("📊 Check out the other tabs to explore your workflow data!")
 
@@ -884,6 +951,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
+        duck_placeholder.empty()
         st.error(f"Error during scan: {str(e)}")
         st.code(traceback.format_exc())
 
