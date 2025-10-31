@@ -206,6 +206,50 @@ def render_scan_tab():
                     st.text(error)
 
 
+def render_mermaid(mermaid_code, height=600):
+    """Render Mermaid diagram using mermaid.js."""
+    html_template = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+        <script>
+            mermaid.initialize({{
+                startOnLoad: true,
+                theme: 'default',
+                securityLevel: 'loose',
+                flowchart: {{
+                    useMaxWidth: true,
+                    htmlLabels: true,
+                    curve: 'basis'
+                }},
+                er: {{
+                    useMaxWidth: true
+                }}
+            }});
+        </script>
+        <style>
+            body {{
+                margin: 0;
+                padding: 20px;
+                background: white;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            }}
+            .mermaid {{
+                text-align: center;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="mermaid">
+{mermaid_code}
+        </div>
+    </body>
+    </html>
+    """
+    st.components.v1.html(html_template, height=height, scrolling=True)
+
+
 def render_visualizations_tab():
     """Render the visualizations tab with diagram generation."""
     st.header("Workflow Visualizations")
@@ -279,11 +323,7 @@ def render_visualizations_tab():
 
         # Render Mermaid diagram
         st.subheader("Interactive Diagram")
-        st.markdown(f"""
-```mermaid
-{diagram_data['code']}
-```
-        """)
+        render_mermaid(diagram_data['code'], height=700)
 
         # Download options
         st.divider()
@@ -345,26 +385,63 @@ def render_database_schema_tab():
 
     for table_name, table_data in sorted(schema_info['tables'].items()):
         with st.expander(f"📊 {table_name}", expanded=False):
-            col1, col2 = st.columns(2)
+            # Operations Breakdown - Visual Chart
+            st.markdown("### Operations Breakdown")
+            import plotly.graph_objects as go
 
-            with col1:
-                st.markdown("**Operations**")
-                st.write(f"- Reads: {table_data['read_count']}")
-                st.write(f"- Writes: {table_data['write_count']}")
-                st.write(f"- Total: {table_data['total_operations']}")
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=['Read', 'Write'],
+                    y=[table_data['read_count'], table_data['write_count']],
+                    marker_color=['#4CAF50', '#FF9800'],
+                    text=[table_data['read_count'], table_data['write_count']],
+                    textposition='auto',
+                )
+            ])
+            fig.update_layout(
+                title=f"{table_name} Operations",
+                yaxis_title="Count",
+                height=300,
+                showlegend=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-            with col2:
-                st.markdown("**Locations**")
-                for loc in table_data['locations'][:5]:  # Show first 5
-                    st.text(f"• {loc}")
-                if len(table_data['locations']) > 5:
-                    st.text(f"  ... and {len(table_data['locations']) - 5} more")
+            # Model/Schema Definition Path
+            if table_data.get('model_path'):
+                st.markdown("### Model Definition")
+                st.code(table_data['model_path'], language="text")
 
-            # Show sample operations
+            # Table Structure (JSON)
+            if table_data.get('columns'):
+                st.markdown("### Table Structure")
+                import json
+                structure = {
+                    "table": table_name,
+                    "columns": table_data['columns'],
+                    "relationships": table_data.get('relationships', [])
+                }
+                st.json(structure)
+
+            # Related Tables
+            if table_data.get('related_tables'):
+                st.markdown("### Related Tables")
+                for rel in table_data['related_tables']:
+                    rel_type_icon = "🔗" if rel['type'] == "belongs_to" else "📊" if rel['type'] == "has_many" else "🔄"
+                    st.write(f"{rel_type_icon} **{rel['type'].replace('_', ' ').title()}**: {rel['table']}")
+
+            # Sample Operations - Actual Source Code
             if table_data['sample_operations']:
-                st.markdown("**Sample Operations**")
-                for op in table_data['sample_operations'][:3]:
-                    st.code(op, language="sql")
+                st.markdown("### Sample Operations from Source Code")
+                for i, op in enumerate(table_data['sample_operations'][:5], 1):
+                    st.markdown(f"**Operation {i}** - `{op['location']}`")
+                    st.code(op['code'], language="csharp")
+
+            # File Locations
+            st.markdown("### Access Locations")
+            for loc in table_data['locations'][:10]:
+                st.text(f"📄 {loc}")
+            if len(table_data['locations']) > 10:
+                st.text(f"   ... and {len(table_data['locations']) - 10} more")
 
     # Relationship diagram
     if schema_info['relationships']:
@@ -372,13 +449,9 @@ def render_database_schema_tab():
         st.subheader("Table Relationships")
         st.markdown("Detected relationships based on workflow patterns")
 
-        # Generate simple Mermaid ER diagram
+        # Generate ER diagram
         er_diagram = generate_er_diagram(schema_info)
-        st.markdown(f"""
-```mermaid
-{er_diagram}
-```
-        """)
+        render_mermaid(er_diagram, height=500)
 
 
 def render_analysis_tab():
@@ -478,12 +551,18 @@ def render_analysis_tab():
 
 def analyze_database_schema(db_nodes, edges):
     """Analyze database operations to extract schema information."""
+    import re
+
     schema = {
         'tables': {},
         'total_reads': 0,
         'total_writes': 0,
         'relationships': []
     }
+
+    # Track model file paths by scanning for DbSet declarations
+    model_paths = {}
+    file_contents_cache = {}
 
     for node in db_nodes:
         table_name = node.table_name or "Unknown"
@@ -494,7 +573,10 @@ def analyze_database_schema(db_nodes, edges):
                 'write_count': 0,
                 'total_operations': 0,
                 'locations': set(),
-                'sample_operations': []
+                'sample_operations': [],
+                'model_path': None,
+                'columns': [],
+                'related_tables': []
             }
 
         table_data = schema['tables'][table_name]
@@ -510,9 +592,72 @@ def analyze_database_schema(db_nodes, edges):
         table_data['total_operations'] += 1
         table_data['locations'].add(str(node.location))
 
-        # Save sample code
-        if node.code_snippet and len(table_data['sample_operations']) < 3:
-            table_data['sample_operations'].append(node.code_snippet)
+        # Save sample code with location
+        if node.code_snippet and len(table_data['sample_operations']) < 5:
+            table_data['sample_operations'].append({
+                'code': node.code_snippet.strip(),
+                'location': str(node.location)
+            })
+
+        # Try to find model definition
+        file_path = node.location.file_path
+
+        # Check if this is a DbContext or model file
+        if ('Context.cs' in file_path or 'DbContext' in file_path or
+            f'{table_name}.cs' in file_path or 'Models' in file_path):
+
+            if not table_data['model_path'] or 'Models' in file_path:
+                table_data['model_path'] = file_path
+
+            # Try to extract column information from the file
+            if file_path not in file_contents_cache and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        file_contents_cache[file_path] = f.read()
+                except:
+                    pass
+
+            if file_path in file_contents_cache:
+                content = file_contents_cache[file_path]
+
+                # Extract properties (columns) from model class
+                if f'class {table_name}' in content or f'DbSet<{table_name}>' in content:
+                    # Find class definition
+                    class_match = re.search(rf'class\s+{table_name}\s*(?::\s*[\w\s,<>]+)?\s*\{{([^}}]+)\}}', content, re.DOTALL)
+                    if class_match:
+                        class_body = class_match.group(1)
+                        # Extract properties
+                        prop_matches = re.finditer(r'public\s+(\w+(?:<[\w,\s]+>)?)\s+(\w+)\s*\{[^}]*\}', class_body)
+                        for prop_match in prop_matches:
+                            prop_type = prop_match.group(1)
+                            prop_name = prop_match.group(2)
+
+                            # Determine if it's a key or navigation property
+                            is_key = 'Id' in prop_name or '[Key]' in class_body[:prop_match.start()]
+                            is_nav = 'virtual' in class_body[max(0, prop_match.start()-50):prop_match.start()] or \
+                                    'ICollection' in prop_type or 'List<' in prop_type
+
+                            column_info = {
+                                'name': prop_name,
+                                'type': prop_type,
+                                'is_key': is_key,
+                                'is_navigation': is_nav
+                            }
+
+                            if column_info not in table_data['columns']:
+                                table_data['columns'].append(column_info)
+
+                            # Detect relationships from navigation properties
+                            if is_nav:
+                                # Extract related table name
+                                related_match = re.search(r'ICollection<(\w+)>|List<(\w+)>|(\w+)\s+\w+\s*\{', prop_type + ' ' + prop_name)
+                                if related_match:
+                                    related_table = related_match.group(1) or related_match.group(2) or prop_type
+                                    if related_table != table_name:
+                                        rel_type = 'has_many' if 'ICollection' in prop_type or 'List<' in prop_type else 'belongs_to'
+                                        rel_info = {'table': related_table, 'type': rel_type}
+                                        if rel_info not in table_data['related_tables']:
+                                            table_data['related_tables'].append(rel_info)
 
     # Convert sets to lists for JSON compatibility
     for table_data in schema['tables'].values():
