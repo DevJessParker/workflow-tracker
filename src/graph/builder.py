@@ -156,16 +156,40 @@ class WorkflowGraphBuilder:
         Returns:
             List of file paths to scan
         """
+        import fnmatch
+
         files = []
+        exclude_patterns = self.config.get('scanner', {}).get('exclude_patterns', [])
+
+        # Convert exclude_dirs to a set for O(1) lookup
+        exclude_dirs_set = set(exclude_dirs)
+
+        # Stats for reporting
+        dirs_skipped = 0
+        files_excluded_by_pattern = 0
 
         for root, dirs, filenames in os.walk(root_path):
-            # Remove excluded directories from search
-            dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith('.')]
+            # Remove excluded directories from search (in-place modification to prevent os.walk from descending)
+            original_dir_count = len(dirs)
+            dirs[:] = [d for d in dirs if d not in exclude_dirs_set and not d.startswith('.')]
+            dirs_skipped += original_dir_count - len(dirs)
 
             for filename in filenames:
-                if any(filename.endswith(ext) for ext in include_extensions):
-                    file_path = os.path.join(root, filename)
-                    files.append(file_path)
+                # Check if file matches any extension
+                if not any(filename.endswith(ext) for ext in include_extensions):
+                    continue
+
+                # Check if file matches any exclude pattern
+                if any(fnmatch.fnmatch(filename, pattern) for pattern in exclude_patterns):
+                    files_excluded_by_pattern += 1
+                    continue
+
+                file_path = os.path.join(root, filename)
+                files.append(file_path)
+
+        # Report what was filtered out
+        if dirs_skipped > 0 or files_excluded_by_pattern > 0:
+            print(f"  Filtered: {dirs_skipped} directories, {files_excluded_by_pattern} files (minified/generated)")
 
         return files
 

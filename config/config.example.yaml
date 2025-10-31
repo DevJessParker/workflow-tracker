@@ -31,14 +31,63 @@ scanner:
     - ".js"      # JavaScript files
     - ".sql"     # SQL files
 
-  # Directories to exclude from scanning
+  # Directories to exclude from scanning (CRITICAL for performance!)
+  # These directories contain dependencies, build artifacts, or non-source files
   exclude_dirs:
-    - "node_modules"
-    - "bin"
-    - "obj"
-    - ".git"
-    - "dist"
-    - "build"
+    # Package managers
+    - "node_modules"     # NPM/Yarn packages
+    - "packages"         # NuGet packages (C#)
+    - "vendor"           # Composer/Go packages
+    - "bower_components" # Bower packages
+
+    # Build outputs
+    - "bin"              # C# compiled binaries
+    - "obj"              # C# intermediate objects
+    - "dist"             # Distribution builds
+    - "build"            # Build output
+    - "out"              # Output directory
+    - "target"           # Java/Maven build
+    - ".next"            # Next.js build
+    - ".nuxt"            # Nuxt.js build
+
+    # Version control
+    - ".git"             # Git repository data
+    - ".svn"             # SVN repository data
+    - ".hg"              # Mercurial repository data
+
+    # IDE and editor directories
+    - ".vs"              # Visual Studio
+    - ".vscode"          # VS Code settings
+    - ".idea"            # JetBrains IDEs
+    - ".eclipse"         # Eclipse
+
+    # Test coverage and reports
+    - "coverage"         # Code coverage reports
+    - "TestResults"      # C# test results
+    - ".nyc_output"      # NYC coverage
+
+    # Temporary and cache directories
+    - "tmp"              # Temporary files
+    - "temp"             # Temporary files
+    - ".cache"           # Cache directory
+    - ".sass-cache"      # Sass cache
+
+    # Documentation builds
+    - "docs/_build"      # Sphinx builds
+    - "site"             # MkDocs builds
+
+    # Docker
+    - ".docker"          # Docker build cache
+
+  # Additional file patterns to exclude (glob patterns)
+  exclude_patterns:
+    - "*.min.js"         # Minified JavaScript (no useful patterns)
+    - "*.bundle.js"      # Bundled JavaScript
+    - "*.min.css"        # Minified CSS
+    - "*.map"            # Source maps
+    - "*.designer.cs"    # Auto-generated designer files
+    - "*.g.cs"           # Auto-generated files
+    - "*.generated.cs"   # Auto-generated files
 
   # Workflow patterns to detect
   detect:
