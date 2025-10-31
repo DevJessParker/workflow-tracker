@@ -1147,9 +1147,11 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Reset scan state - NO rerun needed, tabs will appear on next natural interaction
+        # Reset scan state and trigger rerun to show tabs
+        # scan_triggered is already False, so this won't cause duplicate execution
         st.session_state.scan_running = False
         st.session_state.scan_complete_flag = True
+        st.rerun()
 
     except KeyboardInterrupt as e:
         # Graceful stop requested by user
@@ -1157,6 +1159,7 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         status_placeholder.empty()
         st.session_state.scan_running = False
         st.warning(f"⏹️ Scan stopped by user")
+        st.rerun()
 
     except Exception as e:
         progress_placeholder.empty()
