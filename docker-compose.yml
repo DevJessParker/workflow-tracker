@@ -40,11 +40,6 @@ services:
       - WORKFLOW_TRACKER_CONFIG=/app/config/local.yaml
       - WORKFLOW_TRACKER_REPO=/repo
     # Run Streamlit directly (not through CLI wrapper) to avoid interactive prompts
+    # Configuration is in .streamlit/config.toml (copied during Docker build)
     entrypoint: ["streamlit", "run"]
-    command:
-      - /app/src/cli/streamlit_app.py
-      - --server.port=8501
-      - --server.address=0.0.0.0
-      - --server.headless=true
-      - --browser.serverAddress=0.0.0.0
-      - --browser.gatherUsageStats=false
+    command: ["/app/src/cli/streamlit_app.py"]
