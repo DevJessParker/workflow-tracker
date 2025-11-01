@@ -29,59 +29,70 @@ pinata-code/
 
 ## Next Steps - Start Building!
 
-### Option 1: Docker Compose - Easiest Start! 🐳 (RECOMMENDED)
+### Option 1: Docker Compose - One Command! 🐳 (RECOMMENDED)
 
-**Get everything running in 60 seconds** with Docker Compose:
+**Start the ENTIRE application with ONE command:**
 
 ```bash
-# 1. Copy and configure environment variables
+# Optional: Copy environment file (has defaults, no editing needed)
 cp .env.example .env
-nano .env  # Edit with your settings (optional for exploration)
 
-# 2. Start all services (PostgreSQL, Redis, MinIO, etc.)
+# Start EVERYTHING - frontend, backend, database, all services
 cd infrastructure/docker
-docker-compose up -d
+docker-compose up --build
+```
 
-# 3. Check that services are running
+**That's it!** 🎉
+
+Docker will:
+1. ✅ Build the Next.js frontend (with hot reload)
+2. ✅ Build the FastAPI backend (with auto-reload)
+3. ✅ Start PostgreSQL database (with initialization)
+4. ✅ Start Redis cache
+5. ✅ Start MinIO storage
+6. ✅ Connect all services together
+
+**First time?** Building images takes 2-5 minutes. Subsequent starts are ~30 seconds.
+
+**Access your application:**
+- 🎨 **Frontend**: http://localhost:3000 - Beautiful status dashboard
+- ⚡ **Backend API**: http://localhost:8000 - JSON API root
+- 📚 **API Docs (Swagger)**: http://localhost:8000/docs - Interactive API explorer
+- 📖 **API Docs (ReDoc)**: http://localhost:8000/redoc - Alternative docs
+- 🐘 **PgAdmin**: http://localhost:5050 - Database GUI (login: admin@pinatacode.com / admin)
+- 🗄️ **MinIO Console**: http://localhost:9001 - Storage admin (login: minioadmin / minioadmin)
+
+**What you get:**
+- ✅ **Frontend** running with hot reload (edit code, see changes instantly)
+- ✅ **Backend** running with auto-reload (FastAPI watches for changes)
+- ✅ **PostgreSQL** database initialized and ready
+- ✅ **Redis** cache ready
+- ✅ **MinIO** S3-compatible storage ready
+- ✅ All services connected and communicating
+
+**Useful commands:**
+```bash
+# Watch logs in real-time
+docker-compose logs -f
+
+# Watch specific service
+docker-compose logs -f backend
+docker-compose logs -f frontend
+
+# Check all services status
 docker-compose ps
 
-# 4. View logs
-docker-compose logs -f
-```
-
-**Services now running:**
-- ✅ **PostgreSQL**: localhost:5432 (database)
-- ✅ **Redis**: localhost:6379 (cache & queue)
-- ✅ **MinIO**: http://localhost:9000 (S3-compatible storage)
-- ✅ **MinIO Console**: http://localhost:9001 (admin: minioadmin/minioadmin)
-- ✅ **PgAdmin** (optional): http://localhost:5050 (admin@pinatacode.com/admin)
-
-**Next steps after Docker is running:**
-```bash
-# Initialize backend (FastAPI)
-cd ../../backend
-poetry init
-poetry install
-poetry run alembic upgrade head
-
-# Initialize frontend (Next.js)
-cd ../frontend
-npx create-next-app@latest . --typescript --tailwind --app
-npm install
-npm run dev
-```
-
-Now you have:
-- ✅ Database ready (PostgreSQL)
-- ✅ Cache ready (Redis)
-- ✅ Storage ready (MinIO)
-- ✅ Backend initialized (FastAPI)
-- ✅ Frontend initialized (Next.js)
-
-**Stop services:**
-```bash
-cd infrastructure/docker
+# Stop all services (keeps data)
 docker-compose down
+
+# Stop and remove all data (fresh start)
+docker-compose down -v
+
+# Rebuild after code changes
+docker-compose up --build
+
+# Start in detached mode (background)
+docker-compose up -d
 ```
 
 ---
