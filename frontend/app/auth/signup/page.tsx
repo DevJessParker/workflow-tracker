@@ -24,14 +24,18 @@ export default function SignupPage() {
 
   const handleDevBypass = () => {
     // Dev bypass: simulate logged in user without SSO
+    // Assign role based on organization type:
+    // - Individual: owner (only user)
+    // - Team: owner (creator of the team)
+    // - Company: owner (company admin)
     const devUser = {
       id: 'dev-user-123',
       email: formData.email || 'dev@pinatacode.com',
       name: formData.name || 'Dev User',
-      role: 'admin',
+      role: 'owner' as const, // Creator is always owner
       organization: {
         id: 'dev-org-123',
-        name: formData.organizationName || 'Dev Organization',
+        name: formData.organizationName || (formData.organizationType === 'individual' ? 'Personal' : 'Dev Organization'),
         type: formData.organizationType,
         plan: plan
       }

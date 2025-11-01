@@ -3,10 +3,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 
+type OrganizationType = 'individual' | 'team' | 'company'
+type UserRole = 'owner' | 'admin' | 'manager' | 'member' | 'employee'
+
 interface Organization {
   id: string
   name: string
-  type: 'individual' | 'team' | 'company'
+  type: OrganizationType
   plan?: string
 }
 
@@ -14,9 +17,11 @@ interface User {
   id: string
   email: string
   name: string
-  role: string
+  role: UserRole
   organization: Organization
 }
+
+export type { OrganizationType, UserRole, Organization, User }
 
 interface AuthContextType {
   user: User | null

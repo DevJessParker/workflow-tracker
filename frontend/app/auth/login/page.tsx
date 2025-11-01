@@ -20,11 +20,12 @@ export default function LoginPage() {
       id: 'dev-user-123',
       email: 'dev@pinatacode.com',
       name: 'Dev User',
-      role: 'admin',
+      role: 'owner' as const, // Dev user is owner for full access
       organization: {
         id: 'dev-org-123',
         name: 'Dev Organization',
-        type: 'company'
+        type: 'company' as const,
+        plan: 'enterprise'
       }
     }
 
