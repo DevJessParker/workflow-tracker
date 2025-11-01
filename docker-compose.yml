@@ -4,13 +4,13 @@ services:
   # Frontend - Next.js React App
   frontend:
     build:
-      context: ../../frontend
+      context: ./frontend
       dockerfile: Dockerfile.dev
     container_name: pinata-frontend
     ports:
       - "3000:3000"
     volumes:
-      - ../../frontend:/app
+      - ./frontend:/app
       - /app/node_modules
       - /app/.next
     environment:
@@ -25,14 +25,14 @@ services:
   # Backend - FastAPI Python API
   backend:
     build:
-      context: ../../backend
+      context: ./backend
       dockerfile: Dockerfile.dev
     container_name: pinata-backend
     ports:
       - "8000:8000"
     volumes:
-      - ../../backend:/app
-      - ../../scanner:/scanner
+      - ./backend:/app
+      - ./scanner:/scanner
       - scan-results:/tmp/scan-results
     environment:
       - PYTHONUNBUFFERED=1
@@ -60,39 +60,6 @@ services:
     restart: unless-stopped
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Worker - Celery Background Jobs (disabled until Celery is configured)
-  # Uncomment when ready to use background jobs
-  # worker:
-  #   build:
-  #     context: ../../backend
-  #     dockerfile: Dockerfile.dev
-  #   container_name: pinata-worker
-  #   volumes:
-  #     - ../../backend:/app
-  #     - ../../scanner:/scanner
-  #     - scan-results:/tmp/scan-results
-  #   environment:
-  #     - PYTHONUNBUFFERED=1
-  #     - DATABASE_URL=postgresql://postgres:postgres@db:5432/pinata_dev
-  #     - REDIS_URL=redis://redis:6379/0
-  #     - CELERY_BROKER_URL=redis://redis:6379/1
-  #     - CELERY_RESULT_BACKEND=redis://redis:6379/2
-  #     - S3_ENDPOINT=http://minio:9000
-  #     - S3_ACCESS_KEY=minioadmin
-  #     - S3_SECRET_KEY=minioadmin
-  #     - S3_BUCKET=pinata-scans
-  #     - ENVIRONMENT=development
-  #     - LOG_LEVEL=debug
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   networks:
-  #     - pinata-network
-  #   restart: unless-stopped
-  #   command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
-
   # Database - PostgreSQL 15
   db:
     image: postgres:15-alpine
@@ -106,7 +73,7 @@ services:
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../../scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - pinata-network
     restart: unless-stopped
