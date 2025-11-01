@@ -29,27 +29,73 @@ pinata-code/
 
 ## Next Steps - Start Building!
 
-### Option 1: Continue with Full Implementation (Recommended)
+### Option 1: Docker Compose - Easiest Start! 🐳 (RECOMMENDED)
 
-Follow the **12-week implementation plan** in `docs/IMPLEMENTATION_PLAN.md`:
+**Get everything running in 60 seconds** with Docker Compose:
 
-**Phase 1 (Weeks 1-2): Foundation**
 ```bash
-# 1. Initialize Backend (FastAPI)
-cd backend
-poetry init
-poetry add fastapi sqlalchemy alembic pydantic redis celery
+# 1. Copy and configure environment variables
+cp .env.example .env
+nano .env  # Edit with your settings (optional for exploration)
 
-# 2. Initialize Frontend (Next.js)
+# 2. Start all services (PostgreSQL, Redis, MinIO, etc.)
+cd infrastructure/docker
+docker-compose up -d
+
+# 3. Check that services are running
+docker-compose ps
+
+# 4. View logs
+docker-compose logs -f
+```
+
+**Services now running:**
+- ✅ **PostgreSQL**: localhost:5432 (database)
+- ✅ **Redis**: localhost:6379 (cache & queue)
+- ✅ **MinIO**: http://localhost:9000 (S3-compatible storage)
+- ✅ **MinIO Console**: http://localhost:9001 (admin: minioadmin/minioadmin)
+- ✅ **PgAdmin** (optional): http://localhost:5050 (admin@pinatacode.com/admin)
+
+**Next steps after Docker is running:**
+```bash
+# Initialize backend (FastAPI)
+cd ../../backend
+poetry init
+poetry install
+poetry run alembic upgrade head
+
+# Initialize frontend (Next.js)
 cd ../frontend
 npx create-next-app@latest . --typescript --tailwind --app
-
-# 3. Start Docker environment
-cd ../infrastructure/docker
-cp ../../.env.example ../../.env
-# Edit .env with your configuration
-docker-compose up
+npm install
+npm run dev
 ```
+
+Now you have:
+- ✅ Database ready (PostgreSQL)
+- ✅ Cache ready (Redis)
+- ✅ Storage ready (MinIO)
+- ✅ Backend initialized (FastAPI)
+- ✅ Frontend initialized (Next.js)
+
+**Stop services:**
+```bash
+cd infrastructure/docker
+docker-compose down
+```
+
+---
+
+### Option 2: Full 12-Week Implementation
+
+Follow the **complete implementation plan** in `docs/IMPLEMENTATION_PLAN.md`:
+
+**Phase 1 (Weeks 1-2): Foundation**
+- Docker Compose setup ✅ (Done above!)
+- Initialize FastAPI backend with Poetry
+- Initialize Next.js frontend
+- Set up authentication (Clerk.dev)
+- Create database models
 
 **Phase 2 (Weeks 3-6): Core Features**
 - Organizations & team management
@@ -73,38 +119,21 @@ docker-compose up
 - Railway.app deployment
 - Monitoring (Sentry, PostHog)
 
-### Option 2: Quick Local Development
-
-Just want to explore the structure?
-
-```bash
-# 1. Set up environment
-cp .env.example .env
-
-# 2. Start services
-cd infrastructure/docker
-docker-compose up -d
-
-# 3. Access services
-# - Frontend: http://localhost:3000 (not initialized yet)
-# - Backend: http://localhost:8000 (not initialized yet)
-# - PostgreSQL: localhost:5432
-# - Redis: localhost:6379
-# - MinIO: http://localhost:9000
-# - PgAdmin: http://localhost:5050
-```
+---
 
 ### Option 3: Keep Using Streamlit (Legacy)
 
 The existing Streamlit app still works! It's now located in `scanner/cli/`:
 
 ```bash
-# Run Streamlit GUI (existing functionality)
+# Run Streamlit GUI directly (existing functionality)
 streamlit run scanner/cli/streamlit_app.py
 
-# Or use Docker
+# Or use the existing Docker Compose setup
 docker-compose -f docker-compose.yml up workflow-tracker
 ```
+
+All your current workflows, database schema analysis, and Confluence integration work exactly as before!
 
 ## Understanding the Vision
 
