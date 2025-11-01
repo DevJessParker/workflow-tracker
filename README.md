@@ -43,572 +43,172 @@ pinata-code/
 
 ---
 
-## 📦 Legacy: Standalone Tool
+## 🎯 What Can You Do?
 
-The original Pinata Code workflow analysis tool **still works!** The code has been moved to `scanner/` and remains fully functional.
+### For Building the SaaS Platform
 
-Pinata Code analyzes C# and TypeScript/Angular repositories to identify database operations, API calls, file I/O, message queues, and data transformations, then generates interactive visualizations and automatically updates your Confluence documentation.
+**Start here:** Read **[QUICKSTART.md](QUICKSTART.md)** to get Docker Compose running and begin development.
 
-## Features
+**Then follow:** The **[12-week implementation plan](docs/IMPLEMENTATION_PLAN.md)** for the complete roadmap.
 
-- **Multi-Language Support**: C# (.NET) and TypeScript/Angular codebases
-- **Comprehensive Detection**:
-  - Database operations (Entity Framework, ADO.NET, SQL)
-  - HTTP/REST API calls
-  - File I/O operations
-  - Message queues (Azure Service Bus, RabbitMQ)
-  - Data transformations (RxJS, LINQ)
-  - Cache operations (localStorage, sessionStorage)
+### For Using the Legacy Standalone Tool
 
-- **Multiple Output Formats**:
-  - Interactive HTML visualizations
-  - Static images (PNG, SVG)
-  - JSON data export
-  - Markdown documentation
-  - Focused Mermaid diagrams (auto-generated or manual)
+The original Streamlit-based workflow analysis tool still works! See **[scanner/README.md](scanner/README.md)** for:
+- Running the Streamlit GUI
+- Scanning repositories
+- Generating workflow visualizations
+- Publishing to Confluence
 
-- **Confluence Integration**: Automatically publish workflow documentation to Confluence Cloud
-- **Auto-Generate Diagrams**: Embed focused Mermaid diagrams directly in Confluence (CI/CD mode)
-- **Manual Diagram Tools**: Create custom diagrams filtered by module, table, or endpoint
-- **CI/CD Ready**: Docker-based deployment for TeamCity and Octopus Deploy
-- **Local GUI**: Web-based interface with interactive diagram generation
+---
 
-## Quick Start
+## 📊 Core Features
 
-### Installation
+### Code Analysis
+- **Multi-language scanning**: C#, TypeScript, JavaScript
+- **Pattern detection**: Database operations, API calls, file I/O, message queues
+- **Static analysis**: No runtime execution required
+- **Incremental scanning**: Only scan changed files (planned)
 
-#### Using Python (Local Development)
+### Visualization
+- Interactive workflow graphs (React Flow)
+- Database schema diagrams (Mermaid)
+- Operations analytics (Plotly charts)
+- Real-time progress tracking
 
-```bash
-# Clone the repository
-git clone <your-repo-url>
-cd workflow-tracker
+### Multi-Tenancy
+- Organization & team management
+- Role-based access control
+- Usage tracking & quotas
+- Subscription billing (Stripe)
 
-# Install dependencies
-pip install -r requirements.txt
+### Integrations
+- **Git**: GitHub, GitLab webhooks
+- **Auth**: Clerk.dev SSO
+- **Storage**: S3-compatible object storage
+- **Legacy**: Confluence publishing (scanner tool)
 
-# Install the package
-pip install -e .
-```
+---
 
-#### Using Docker
-
-```bash
-# Build the Docker image
-docker build -t workflow-tracker .
-
-# Create config file first (important for performance!)
-cp config/config.example.yaml config/local.yaml
-# Edit config/local.yaml with your settings
-
-# Run a scan with config mounted
-docker run --rm \
-  -v /path/to/your/repo:/repo:ro \
-  -v $(pwd)/config:/app/config:ro \
-  -v $(pwd)/output:/app/output \
-  workflow-tracker scan --repo /repo --config /app/config/local.yaml
-```
-
-**Note**: Always mount the config directory and specify `--config` flag to ensure exclusions are applied (node_modules, bin, obj, etc.).
-
-### Configuration
-
-1. Create a local configuration file:
-
-```bash
-workflow-tracker init
-```
-
-2. Edit `config/local.yaml` with your settings:
-
-```yaml
-repository:
-  path: "/path/to/your/repo"
-
-confluence:
-  url: "https://your-domain.atlassian.net"
-  username: "your.email@company.com"
-  api_token: "your-api-token"
-  space_key: "~YOURUSERID"  # Your personal space for testing
-
-scanner:
-  include_extensions:
-    - ".cs"
-    - ".ts"
-    - ".js"
-  exclude_dirs:
-    - "node_modules"
-    - "bin"
-    - "obj"
-
-output:
-  directory: "./output"
-  formats:
-    - "html"
-    - "json"
-    - "markdown"
-```
-
-3. Get your Confluence API token:
-   - Go to https://id.atlassian.com/manage-profile/security/api-tokens
-   - Create a new API token
-   - Add it to your configuration
-
-### Usage
-
-#### Command Line
-
-Scan a repository and generate visualizations:
-
-```bash
-workflow-tracker scan --repo /path/to/repo --format html --format json
-```
-
-Scan and publish to Confluence:
-
-```bash
-workflow-tracker scan --repo /path/to/repo --publish
-```
-
-Scan and auto-generate diagrams in Confluence (CI/CD):
-
-```bash
-workflow-tracker scan --repo /path/to/repo --publish --auto-diagrams
-```
-
-Generate focused diagrams manually:
-
-```bash
-# After scanning, create diagrams from JSON results
-python tools/create_diagrams.py output/workflow_graph.json \
-  --module "Services/UserService" \
-  --format mermaid \
-  --output user_service_diagram
-```
-
-#### GUI Mode (Local Development)
-
-Launch the interactive web interface:
-
-```bash
-workflow-tracker gui --repo /path/to/repo
-```
-
-Then open your browser to http://localhost:8501
-
-Features:
-- Scan repository with customizable options
-- **Generate diagrams interactively** using the sidebar
-- Filter by module, database table, or API endpoint
-- Download Mermaid diagrams for documentation
-- View and explore workflow nodes in real-time
-
-#### Docker Compose
-
-For easier local development with Docker:
-
-```bash
-# Step 1: Create config file (CRITICAL for performance!)
-cp config/config.example.yaml config/local.yaml
-# Edit config/local.yaml with your repository path and Confluence settings
-
-# Step 2: Create .env file
-cp .env.example .env
-# Edit .env with your settings (repo path, Confluence credentials)
-
-# Step 3: Run the scanner
-docker-compose up workflow-tracker
-
-# Or run the GUI
-docker-compose up workflow-tracker-gui
-```
-
-**⚠️ IMPORTANT**: The `config/local.yaml` file contains critical exclusions (node_modules, bin, obj, etc.). Without it, Docker will scan ALL files and take much longer! See [docs/SCAN_OPTIMIZATION.md](docs/SCAN_OPTIMIZATION.md) for details.
-
-## Diagram Generation
-
-Workflow Tracker provides three ways to generate focused diagrams from your scan results:
-
-### 1. Manual CLI Tool (For Developers)
-
-Generate custom diagrams from scan results for comparing local changes:
-
-```bash
-# Generate Mermaid diagram for a specific module
-python tools/create_diagrams.py output/workflow_graph.json \
-  --module "Services/UserService" \
-  --format mermaid \
-  --output user_service
-
-# Generate diagram for a database table
-python tools/create_diagrams.py output/workflow_graph.json \
-  --table Users \
-  --format dot \
-  --output users_table
-
-# Generate diagram for an API endpoint
-python tools/create_diagrams.py output/workflow_graph.json \
-  --endpoint "/api/users" \
-  --format mermaid
-```
-
-**Supported formats:**
-- `mermaid` - For Markdown, GitHub, GitLab, Confluence
-- `dot` - Graphviz format for high-quality images
-- `plantuml` - For sequence diagrams
-
-### 2. Auto-Generate in CI/CD
-
-Configure automatic diagram generation and publishing to Confluence:
-
-```yaml
-# In config/local.yaml
-confluence:
-  auto_diagrams:
-    modules:
-      - "Services/UserService"
-      - "Controllers/UserController"
-    tables:
-      - "Users"
-      - "Orders"
-    endpoints:
-      - "/api/users"
-    max_nodes_per_diagram: 50
-```
-
-Then run with `--auto-diagrams` flag:
-
-```bash
-workflow-tracker scan --repo . --publish --auto-diagrams
-```
-
-Diagrams will be embedded directly in your Confluence page!
-
-### 3. Interactive GUI
-
-Generate diagrams on-demand in the web interface:
-
-1. Launch GUI: `workflow-tracker gui --repo .`
-2. Scan your repository
-3. Use the "Generate Diagrams" section in the sidebar
-4. Select filter type (Module, Table, or Endpoint)
-5. Enter filter value and click "Generate Diagram"
-6. Download the Mermaid code or copy/paste
-
-**See [docs/AUTO_DIAGRAMS.md](docs/AUTO_DIAGRAMS.md) for complete documentation.**
-
-## CI/CD Integration
-
-### TeamCity
-
-1. Add a build step with the following script:
-
-```bash
-#!/bin/bash
-# With auto-diagram generation
-docker run --rm \
-  -v %system.teamcity.build.checkoutDir%:/repo:ro \
-  -e CONFLUENCE_URL=%env.CONFLUENCE_URL% \
-  -e CONFLUENCE_USERNAME=%env.CONFLUENCE_USERNAME% \
-  -e CONFLUENCE_API_TOKEN=%env.CONFLUENCE_API_TOKEN% \
-  -e CONFLUENCE_SPACE_KEY=%env.CONFLUENCE_SPACE_KEY% \
-  -e CI_MODE=true \
-  workflow-tracker:latest \
-  scan --repo /repo --publish --auto-diagrams
-```
-
-2. Configure environment variables in TeamCity:
-   - `CONFLUENCE_URL`
-   - `CONFLUENCE_USERNAME`
-   - `CONFLUENCE_API_TOKEN`
-   - `CONFLUENCE_SPACE_KEY`
-
-3. Update `config/local.yaml` with `auto_diagrams` configuration (see Diagram Generation section)
-
-4. The workflow documentation with embedded diagrams will be automatically updated on each build.
-
-### Octopus Deploy
-
-1. Add a "Run a Script" step to your deployment process
-
-2. Use the PowerShell script:
-
-```powershell
-# With auto-diagram generation
-docker run --rm `
-  -v ${OctopusParameters['Repository.Path']}:/repo:ro `
-  -e CONFLUENCE_URL=${OctopusParameters['Confluence.Url']} `
-  -e CONFLUENCE_USERNAME=${OctopusParameters['Confluence.Username']} `
-  -e CONFLUENCE_API_TOKEN=${OctopusParameters['Confluence.ApiToken']} `
-  -e CONFLUENCE_SPACE_KEY=${OctopusParameters['Confluence.SpaceKey']} `
-  -e CI_MODE=true `
-  workflow-tracker:latest `
-  scan --repo /repo --publish --auto-diagrams
-```
-
-3. Configure Octopus variables:
-   - `Confluence.Url`
-   - `Confluence.Username`
-   - `Confluence.ApiToken`
-   - `Confluence.SpaceKey`
-   - `Repository.Path`
-
-4. Update `config/local.yaml` with `auto_diagrams` configuration (see Diagram Generation section)
-
-5. The workflow documentation with embedded diagrams will be updated with each production deployment.
-
-### GitHub Actions (Example)
-
-```yaml
-name: Update Workflow Documentation
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  workflow-docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Build and run Workflow Tracker
-        run: |
-          docker build -t workflow-tracker .
-          docker run --rm \
-            -v ${{ github.workspace }}:/repo:ro \
-            -v ${{ github.workspace }}/output:/app/output \
-            -e CONFLUENCE_URL=${{ secrets.CONFLUENCE_URL }} \
-            -e CONFLUENCE_USERNAME=${{ secrets.CONFLUENCE_USERNAME }} \
-            -e CONFLUENCE_API_TOKEN=${{ secrets.CONFLUENCE_API_TOKEN }} \
-            -e CONFLUENCE_SPACE_KEY=${{ secrets.CONFLUENCE_SPACE_KEY }} \
-            -e CI_MODE=true \
-            workflow-tracker scan --repo /repo --publish
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: workflow-docs
-          path: output/
-```
-
-## Architecture
+## 📁 Repository Structure
 
 ```
-workflow-tracker/
-├── src/
-│   ├── scanner/              # Code scanners
-│   │   ├── base.py           # Base scanner class
-│   │   ├── csharp_scanner.py # C# code analysis
-│   │   └── typescript_scanner.py # TypeScript/Angular analysis
-│   ├── graph/                # Graph generation
-│   │   ├── builder.py        # Graph construction
-│   │   └── renderer.py       # Multi-format rendering
-│   ├── integrations/         # External integrations
-│   │   └── confluence.py     # Confluence API client
-│   ├── cli/                  # Command-line interface
-│   │   ├── main.py           # CLI commands
-│   │   └── streamlit_app.py  # Web GUI
-│   ├── models.py             # Data models
-│   └── config_loader.py      # Configuration management
-├── config/
-│   └── config.example.yaml   # Configuration template
-├── ci-cd/                    # CI/CD integration scripts
-│   ├── teamcity-build.sh
-│   └── octopus-deploy.ps1
-├── Dockerfile                # Docker image
-├── docker-compose.yml        # Docker Compose configuration
-└── requirements.txt          # Python dependencies
+pinata-code/
+├── frontend/              # Next.js 14 + React + TypeScript
+│   ├── app/              # Next.js app router
+│   ├── components/       # React components
+│   └── lib/              # Utilities
+├── backend/              # FastAPI + SQLAlchemy
+│   ├── app/              # Application code
+│   │   ├── api/         # REST endpoints
+│   │   ├── models/      # Database models
+│   │   ├── services/    # Business logic
+│   │   └── tasks/       # Celery jobs
+│   └── tests/           # Test suite
+├── scanner/              # Python scanning engine
+│   ├── cli/             # CLI & Streamlit GUI (legacy)
+│   ├── scanner/         # Core scanning logic
+│   ├── graph/           # Visualization generation
+│   └── integrations/    # Confluence, etc.
+├── infrastructure/       # Docker & deployment
+│   └── docker/          # docker-compose.yml
+├── docs/                # Documentation
+│   ├── IMPLEMENTATION_PLAN.md
+│   ├── REVENUE_STRATEGY.md
+│   └── ARCHITECTURE_SCALABLE_SAAS.md
+└── QUICKSTART.md        # Getting started guide
 ```
 
-## What Gets Detected
+---
 
-### C# (.NET) Detection
+## 🛠️ Tech Stack
 
-- **Database Operations**:
-  - Entity Framework LINQ queries
-  - DbContext operations (Add, Update, Remove, SaveChanges)
-  - Raw SQL queries (SqlCommand, ExecuteReader, etc.)
-  - Dapper queries
+### Frontend
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS + Shadcn/ui
+- **State**: Zustand
+- **Data Fetching**: React Query
 
-- **API Calls**:
-  - HttpClient requests (GetAsync, PostAsync, etc.)
-  - RestSharp calls
-  - Custom HTTP clients
+### Backend
+- **Framework**: FastAPI
+- **ORM**: SQLAlchemy 2.0
+- **Database**: PostgreSQL 15
+- **Cache**: Redis 7
+- **Queue**: Celery
+- **Storage**: S3/MinIO
 
-- **File Operations**:
-  - File.ReadAllText/WriteAllText
-  - StreamReader/StreamWriter
-  - FileStream operations
+### Scanning Engine
+- **Language**: Python 3.11
+- **Parsing**: Tree-sitter, Regex
+- **Analysis**: Static code analysis
+- **Output**: Mermaid, JSON, HTML
 
-- **Message Queues**:
-  - Azure Service Bus (ServiceBusSender, ServiceBusReceiver)
-  - RabbitMQ (BasicPublish, BasicConsume)
+---
 
-### TypeScript/Angular Detection
+## 📚 Documentation
 
-- **API Calls**:
-  - Angular HttpClient methods
-  - Fetch API
-  - Axios requests
+- **[QUICKSTART.md](QUICKSTART.md)** - Get started in 60 seconds with Docker Compose
+- **[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)** - 12-week development roadmap
+- **[docs/REVENUE_STRATEGY.md](docs/REVENUE_STRATEGY.md)** - Business model & pricing
+- **[docs/ARCHITECTURE_SCALABLE_SAAS.md](docs/ARCHITECTURE_SCALABLE_SAAS.md)** - Technical architecture
+- **[backend/README.md](backend/README.md)** - Backend development guide
+- **[frontend/README.md](frontend/README.md)** - Frontend development guide
+- **[scanner/README.md](scanner/README.md)** - Scanning engine & legacy tool
+- **[infrastructure/README.md](infrastructure/README.md)** - Docker & deployment
 
-- **Storage Operations**:
-  - localStorage/sessionStorage
-  - IndexedDB
+---
 
-- **Data Transformations**:
-  - RxJS operators (map, filter, switchMap, etc.)
-  - Array operations
+## 🚀 Development Roadmap
 
-- **File Operations**:
-  - FileReader API
-  - Blob operations
+| Phase | Timeline | Status |
+|-------|----------|--------|
+| **Foundation** | Weeks 1-2 | ✅ Structure ready |
+| **Core Features** | Weeks 3-6 | 📋 Planned |
+| **Billing** | Weeks 7-8 | 📋 Planned |
+| **Testing** | Weeks 9-10 | 📋 Planned |
+| **Deployment** | Weeks 11-12 | 📋 Planned |
 
-## Output Examples
+**Current Status**: Monorepo foundation complete. Ready for Phase 1 implementation.
 
-### Interactive HTML Visualization
+---
 
-The HTML output provides an interactive graph where you can:
-- Zoom and pan
-- Hover over nodes to see details
-- Click nodes to view code snippets
-- Filter by workflow type
+## 💰 Business Model
 
-### Confluence Documentation
+### Pricing Tiers
+- **Free**: 1 repository, 10 scans/month - Perfect for individuals
+- **Team**: $49/month, 10 repos, 1,000 scans/month - For small teams
+- **Enterprise**: $499/month, unlimited - For organizations
 
-Automatically generated pages include:
-- Summary statistics
-- Workflow operation breakdown by type
-- Detailed listings with code snippets
-- Attached interactive visualizations
+### Revenue Projections
+- **Year 1**: $100K-250K ARR target
+- **Year 2**: $250K-500K ARR target
+- **Year 3**: $500K-1M ARR target
 
-### JSON Export
+See **[docs/REVENUE_STRATEGY.md](docs/REVENUE_STRATEGY.md)** for detailed analysis.
 
-Perfect for programmatic access:
+---
 
-```json
-{
-  "repository": "/path/to/repo",
-  "nodes": [
-    {
-      "id": "UserService.cs:db_read:45",
-      "type": "database_read",
-      "name": "DB Query: Users",
-      "location": {
-        "file": "Services/UserService.cs",
-        "line": 45
-      },
-      "table_name": "Users"
-    }
-  ],
-  "edges": [
-    {
-      "source": "UserService.cs:db_read:45",
-      "target": "UserService.cs:transform:52",
-      "label": "Data Processing"
-    }
-  ]
-}
-```
+## 🤝 Contributing
 
-## Configuration Options
+Pinata Code is in active development. Contributions welcome!
 
-See `config/config.example.yaml` for all available options:
+**For the SaaS platform:**
+1. Read the [implementation plan](docs/IMPLEMENTATION_PLAN.md)
+2. Check current phase progress
+3. Pick a task from the roadmap
+4. Submit a pull request
 
-- **Repository settings**: Path, branch
-- **Confluence settings**: URL, credentials, space
-- **Scanner settings**: File extensions, excluded directories, detection toggles
-- **Output settings**: Formats, directory, visualization options
-- **CI mode**: Headless execution, error handling
+**For the scanning engine:**
+1. See [scanner/README.md](scanner/README.md)
+2. Add language support or new patterns
+3. Submit a pull request
 
-## Troubleshooting
+---
 
-### "No configuration file found"
+## 📄 License
 
-Run `workflow-tracker init` to create the configuration template.
+Proprietary - Part of Pinata Code SaaS Platform
 
-### "Confluence API error"
+---
 
-- Verify your API token is correct
-- Check that your space key is correct (for personal space, it starts with `~`)
-- Ensure you have permission to create/edit pages in the space
-
-### "No workflows found"
-
-- Check that file extensions in config match your repository
-- Verify excluded directories aren't filtering out your code
-- Try running with `--debug` flag for more information
-
-### Docker issues
-
-- Make sure the repository path is mounted correctly
-- Check that output directory has write permissions
-- Verify environment variables are set
-
-## Development
-
-### Adding a New Scanner
-
-1. Create a new scanner class inheriting from `BaseScanner`:
-
-```python
-from src.scanner.base import BaseScanner
-from src.models import WorkflowGraph, WorkflowNode, WorkflowType
-
-class MyLanguageScanner(BaseScanner):
-    def can_scan(self, file_path: str) -> bool:
-        return file_path.endswith('.mylang')
-
-    def scan_file(self, file_path: str) -> WorkflowGraph:
-        # Implement scanning logic
-        pass
-```
-
-2. Register it in `src/graph/builder.py`:
-
-```python
-scanners = [
-    CSharpScanner(scanner_config),
-    TypeScriptScanner(scanner_config),
-    MyLanguageScanner(scanner_config),  # Add your scanner
-]
-```
-
-### Running Tests
-
-```bash
-pytest tests/ -v
-```
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Contact your team lead
-- Check the documentation in `docs/`
-
-## Roadmap
-
-Future enhancements:
-- [ ] Support for Java/Spring Boot
-- [ ] Support for Python/Django
-- [ ] GraphQL query detection
-- [ ] gRPC call detection
-- [ ] Cloud service integrations (AWS, Azure)
-- [ ] Performance profiling integration
-- [ ] Custom pattern definitions
-- [ ] Team collaboration features
+**Ready to start?** Open **[QUICKSTART.md](QUICKSTART.md)** and let's build! 🪅
