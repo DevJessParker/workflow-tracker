@@ -31,14 +31,9 @@ pinata-code/
 
 ### Option 1: Docker Compose - One Command! 🐳 (RECOMMENDED)
 
-**Start the ENTIRE application with ONE command:**
+**Start the ENTIRE application with ONE command from the project root:**
 
 ```bash
-# Optional: Copy environment file (has defaults, no editing needed)
-cp .env.example .env
-
-# Start EVERYTHING - frontend, backend, database, all services
-cd infrastructure/docker
 docker-compose up --build
 ```
 
