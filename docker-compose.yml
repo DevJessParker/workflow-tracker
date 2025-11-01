@@ -1,0 +1,207 @@
+version: '3.9'
+
+services:
+  # Frontend - Next.js React App
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile.dev
+    container_name: pinata-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-}
+    networks:
+      - pinata-network
+    restart: unless-stopped
+
+  # Backend - FastAPI Python API
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.dev
+    container_name: pinata-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../backend:/app
+      - ../../scanner:/scanner
+      - scan-results:/tmp/scan-results
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/pinata_dev
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=pinata-scans
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - pinata-network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Worker - Celery Background Jobs (disabled until Celery is configured)
+  # Uncomment when ready to use background jobs
+  # worker:
+  #   build:
+  #     context: ../../backend
+  #     dockerfile: Dockerfile.dev
+  #   container_name: pinata-worker
+  #   volumes:
+  #     - ../../backend:/app
+  #     - ../../scanner:/scanner
+  #     - scan-results:/tmp/scan-results
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - DATABASE_URL=postgresql://postgres:postgres@db:5432/pinata_dev
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - CELERY_BROKER_URL=redis://redis:6379/1
+  #     - CELERY_RESULT_BACKEND=redis://redis:6379/2
+  #     - S3_ENDPOINT=http://minio:9000
+  #     - S3_ACCESS_KEY=minioadmin
+  #     - S3_SECRET_KEY=minioadmin
+  #     - S3_BUCKET=pinata-scans
+  #     - ENVIRONMENT=development
+  #     - LOG_LEVEL=debug
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - pinata-network
+  #   restart: unless-stopped
+  #   command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+
+  # Database - PostgreSQL 15
+  db:
+    image: postgres:15-alpine
+    container_name: pinata-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=pinata_dev
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - pinata-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Cache - Redis 7
+  redis:
+    image: redis:7-alpine
+    container_name: pinata-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - pinata-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Object Storage - MinIO (S3-compatible)
+  minio:
+    image: minio/minio:latest
+    container_name: pinata-minio
+    ports:
+      - "9000:9000"  # API port
+      - "9001:9001"  # Console port
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - pinata-network
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client - Initialize Buckets
+  minio-init:
+    image: minio/mc:latest
+    container_name: pinata-minio-init
+    depends_on:
+      - minio
+    networks:
+      - pinata-network
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/pinata-scans --ignore-existing;
+      /usr/bin/mc policy set download myminio/pinata-scans;
+      exit 0;
+      "
+
+  # (Optional) PgAdmin - Database GUI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pinata-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@pinatacode.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - pinata-network
+    restart: unless-stopped
+    profiles:
+      - dev-tools
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  scan-results:
+    driver: local
+
+networks:
+  pinata-network:
+    driver: bridge
