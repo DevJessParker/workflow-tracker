@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from typing import List, Dict, Any
 
-from ..models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
-from ..scanner import CSharpScanner, TypeScriptScanner, ReactScanner, AngularScanner, WPFScanner
+from scanner.models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
+from scanner.scanner import CSharpScanner, TypeScriptScanner, ReactScanner, AngularScanner, WPFScanner
 
 
 class WorkflowGraphBuilder:
@@ -311,7 +311,7 @@ class WorkflowGraphBuilder:
         Args:
             graph: Workflow graph to analyze
         """
-        from ..models import WorkflowType
+        from scanner.models import WorkflowType
         from collections import defaultdict
 
         print("  Inferring data flow edges...")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from atlassian import Confluence
 
-from ..models import ScanResult
+from scanner.models import ScanResult
 
 
 class ConfluencePublisher:

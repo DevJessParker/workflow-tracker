@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Set
 from pathlib import Path
 
-from ..models import WorkflowGraph, WorkflowNode, CodeLocation
+from scanner.models import WorkflowGraph, WorkflowNode, CodeLocation
 
 
 class BaseScanner(ABC):
