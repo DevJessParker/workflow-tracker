@@ -34,6 +34,8 @@ export interface UseScanWebSocketOptions {
   url: string
   /** Scan ID to monitor */
   scanId: string
+  /** Enable the WebSocket connection (default: true) */
+  enabled?: boolean
   /** Callback when update received */
   onUpdate: (update: ScanUpdate) => void
   /** Callback when connection status changes */
@@ -53,6 +55,7 @@ export interface UseScanWebSocketOptions {
 export function useScanWebSocket({
   url,
   scanId,
+  enabled = true,
   onUpdate,
   onConnectionChange,
   autoReconnect = true,
@@ -212,16 +215,21 @@ export function useScanWebSocket({
     updateConnectionStatus('disconnected')
   }, [stopHeartbeat, updateConnectionStatus])
 
-  // Auto-connect on mount
+  // Auto-connect when enabled and scanId exists
   useEffect(() => {
+    if (!enabled || !scanId) {
+      console.log('[WebSocket] Not connecting: enabled=' + enabled + ', scanId=' + scanId)
+      return
+    }
+
     isIntentionalClose.current = false
     connect()
 
-    // Cleanup on unmount
+    // Cleanup on unmount or when disabled
     return () => {
       disconnect()
     }
-  }, [connect, disconnect])
+  }, [enabled, scanId, connect, disconnect])
 
   return {
     connectionStatus,
