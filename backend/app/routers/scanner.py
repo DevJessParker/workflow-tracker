@@ -3,13 +3,14 @@ Scanner API Router
 Handles repository scanning, analysis, and visualization endpoints
 """
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 import os
 import sys
+import asyncio
 
 # Add scanner to path
 sys.path.insert(0, '/scanner')
@@ -69,7 +70,7 @@ SCAN_STATUS = {}
 
 
 @router.post("/scan", response_model=ScanResponse)
-async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
+async def start_scan(request: ScanRequest):
     """
     Start a new repository scan
 
@@ -98,12 +99,12 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
         "total_files": None
     }
 
-    # Queue the scan as a background task
-    background_tasks.add_task(
-        run_scan,
-        scan_id=scan_id,
-        request=request
-    )
+    print(f"[{scan_id}] ✅ Scan queued, starting background task...")
+
+    # Start the scan in a true background task (non-blocking)
+    asyncio.create_task(run_scan(scan_id, request))
+
+    print(f"[{scan_id}] 📤 Returning response immediately to frontend")
 
     return ScanResponse(
         scan_id=scan_id,
