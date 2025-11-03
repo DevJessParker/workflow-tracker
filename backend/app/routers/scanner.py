@@ -265,6 +265,9 @@ async def run_scan(scan_id: str, request: ScanRequest):
             }
         }
 
+        # Import Redis publish function
+        from app.redis_client import publish_scan_update
+
         # Progress callback
         files_discovered = False
         def update_progress(current, total, message):
@@ -300,8 +303,14 @@ async def run_scan(scan_id: str, request: ScanRequest):
                     SCAN_STATUS[scan_id]["status"] = "scanning"
                     # Use cleaner message format
                     SCAN_STATUS[scan_id]["message"] = f"Scanning... {current:,}/{total:,} files"
+
+                # Publish update to Redis for WebSocket clients
+                publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
             else:
                 SCAN_STATUS[scan_id]["message"] = message
+                # Publish update to Redis
+                publish_scan_update(scan_id, SCAN_STATUS[scan_id])
 
         # Run scan
         builder = WorkflowGraphBuilder(config)
@@ -313,6 +322,9 @@ async def run_scan(scan_id: str, request: ScanRequest):
 
         print(f"[{scan_id}] 📊 Status set to 'discovering' - frontend can now see this")
         print(f"[{scan_id}] 📊 Current SCAN_STATUS: {SCAN_STATUS[scan_id]}")
+
+        # Publish initial status to Redis
+        publish_scan_update(scan_id, SCAN_STATUS[scan_id])
 
         result = builder.build(request.repo_path, progress_callback=update_progress)
 
@@ -328,6 +340,11 @@ async def run_scan(scan_id: str, request: ScanRequest):
         SCAN_STATUS[scan_id]["eta"] = "0m 0s"
         SCAN_STATUS[scan_id]["total_files"] = result.files_scanned
 
+        # Publish completion status to Redis
+        publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+        print(f"[{scan_id}] ✅ Scan completed: {result.files_scanned} files, {len(result.graph.nodes)} nodes")
+
         # Render outputs
         renderer = WorkflowRenderer(config)
         renderer.render(result)
@@ -336,7 +353,11 @@ async def run_scan(scan_id: str, request: ScanRequest):
         SCAN_STATUS[scan_id]["status"] = "failed"
         SCAN_STATUS[scan_id]["message"] = f"Scan failed: {str(e)}"
         SCAN_STATUS[scan_id]["eta"] = None
-        print(f"Scan {scan_id} failed: {e}")
+
+        # Publish error status to Redis
+        publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+        print(f"[{scan_id}] ❌ Scan failed: {e}")
         import traceback
         traceback.print_exc()
 
