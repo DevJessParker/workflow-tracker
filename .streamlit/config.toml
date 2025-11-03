@@ -28,9 +28,6 @@ toolbarMode = "minimal"
 # Show error details for debugging
 showErrorDetails = true
 
-# CRITICAL: Don't reload on focus
-caching = true
-
 [runner]
 # CRITICAL: Don't watch for module changes
 magicEnabled = false
