@@ -103,6 +103,19 @@ export default function ScannerPage() {
     loadEnvironment()
   }, [router])
 
+  // Debug: Log when scanStatus changes
+  useEffect(() => {
+    const timestamp = new Date().toLocaleTimeString()
+    console.log(`[${timestamp}] 🔄 REACT STATE CHANGE: scanStatus updated to:`, scanStatus)
+    if (scanStatus) {
+      console.log(`[${timestamp}] 🔄 Progress bar should show: ${scanStatus.progress}%`)
+      console.log(`[${timestamp}] 🔄 Files: ${scanStatus.files_scanned}/${scanStatus.total_files || '?'}`)
+      console.log(`[${timestamp}] 🔄 Nodes: ${scanStatus.nodes_found}`)
+      console.log(`[${timestamp}] 🔄 Status: ${scanStatus.status}`)
+      console.log(`[${timestamp}] 🔄 ETA: ${scanStatus.eta || 'N/A'}`)
+    }
+  }, [scanStatus])
+
   const loadEnvironment = async () => {
     try {
       const response = await fetch(`${API_URL}/api/v1/scanner/environment`)
@@ -183,38 +196,70 @@ export default function ScannerPage() {
   }
 
   const pollScanStatus = async (id: string) => {
+    console.log(`🔄 Starting to poll scan status for ID: ${id}`)
+    let pollCount = 0
+
     const pollInterval = setInterval(async () => {
+      pollCount++
+      const timestamp = new Date().toLocaleTimeString()
+
       try {
+        console.log(`[${timestamp}] 📡 Poll #${pollCount}: Fetching status from ${API_URL}/api/v1/scanner/scan/${id}/status`)
+
         const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`)
+
+        console.log(`[${timestamp}] 📡 Poll #${pollCount}: Response status: ${response.status}`)
+
+        if (!response.ok) {
+          console.error(`[${timestamp}] ❌ Poll #${pollCount}: HTTP error! status: ${response.status}`)
+          return
+        }
+
         const status = await response.json()
 
-        console.log('📊 Scan status update:', {
+        console.log(`[${timestamp}] 📊 Poll #${pollCount}: RAW API Response:`, JSON.stringify(status, null, 2))
+        console.log(`[${timestamp}] 📊 Poll #${pollCount}: Parsed status:`, {
+          scan_id: status.scan_id,
+          status: status.status,
           progress: status.progress,
           message: status.message,
-          files: status.files_scanned,
-          nodes: status.nodes_found,
-          status: status.status
+          files_scanned: status.files_scanned,
+          total_files: status.total_files,
+          nodes_found: status.nodes_found,
+          eta: status.eta
         })
 
+        // Log previous state for comparison
+        console.log(`[${timestamp}] 🔍 Poll #${pollCount}: Current scanStatus state BEFORE update:`, scanStatus)
+
+        // Update state
+        console.log(`[${timestamp}] ⚡ Poll #${pollCount}: Calling setScanStatus with new data...`)
         setScanStatus(status)
 
+        console.log(`[${timestamp}] ✓ Poll #${pollCount}: setScanStatus called successfully`)
+
         if (status.status === 'completed') {
-          console.log('✅ Scan completed!')
+          console.log(`[${timestamp}] ✅ Poll #${pollCount}: Scan completed! Stopping poll and loading results.`)
           clearInterval(pollInterval)
           setScanning(false)
           loadScanResults(id)
         } else if (status.status === 'failed') {
-          console.error('❌ Scan failed!')
+          console.error(`[${timestamp}] ❌ Poll #${pollCount}: Scan failed! Message: ${status.message}`)
           clearInterval(pollInterval)
           setScanning(false)
+        } else {
+          console.log(`[${timestamp}] ⏳ Poll #${pollCount}: Scan still in progress... (${status.status})`)
         }
       } catch (error) {
-        console.error('Failed to poll scan status:', error)
+        console.error(`[${timestamp}] ❌ Poll #${pollCount}: Error during polling:`, error)
       }
     }, 1000)
 
     // Stop polling after 10 minutes
-    setTimeout(() => clearInterval(pollInterval), 600000)
+    setTimeout(() => {
+      console.log('⏱️ 10 minute timeout reached, stopping poll')
+      clearInterval(pollInterval)
+    }, 600000)
   }
 
   const loadScanResults = async (id: string) => {
