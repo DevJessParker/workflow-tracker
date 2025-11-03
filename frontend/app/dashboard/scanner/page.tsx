@@ -194,7 +194,7 @@ export default function ScannerPage() {
 
     } catch (error) {
       console.error('Failed to start scan:', error)
-      alert(`Failed to start scan: ${error instanceof Error ?.message : 'Unknown error'}`)
+      alert(`Failed to start scan: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setScanning(false)
       setScanStatus(null)
     }
