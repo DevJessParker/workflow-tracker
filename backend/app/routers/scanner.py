@@ -121,6 +121,16 @@ async def get_scan_status(scan_id: str):
     return SCAN_STATUS[scan_id]
 
 
+@router.get("/scans/active")
+async def get_active_scans():
+    """Get all active (non-completed) scans"""
+    active = []
+    for scan_id, status in SCAN_STATUS.items():
+        if status["status"] not in ["completed", "failed"]:
+            active.append(status)
+    return {"active_scans": active, "count": len(active)}
+
+
 @router.get("/scan/{scan_id}/results")
 async def get_scan_results(scan_id: str):
     """Get the results of a completed scan"""
