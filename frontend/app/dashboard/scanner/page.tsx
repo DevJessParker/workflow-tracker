@@ -205,8 +205,11 @@ export default function ScannerPage() {
     console.log('🔗 API_URL:', API_URL)
     let attempts = 0
     const maxAttempts = 60 // Poll for up to 60 seconds
+    let stopped = false
 
-    const checkInterval = setInterval(async () => {
+    const checkOnce = async () => {
+      if (stopped) return
+
       attempts++
       const timestamp = new Date().toLocaleTimeString()
 
@@ -214,12 +217,21 @@ export default function ScannerPage() {
         const url = `${API_URL}/api/v1/scanner/scans/active`
         console.log(`[${timestamp}] 🔍 Attempt #${attempts}: Fetching from ${url}`)
 
-        const response = await fetch(url)
+        // Add timeout to fetch
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+        const response = await fetch(url, { signal: controller.signal })
+        clearTimeout(timeoutId)
 
         console.log(`[${timestamp}] 📡 Response status: ${response.status} ${response.statusText}`)
 
         if (!response.ok) {
           console.error(`[${timestamp}] ❌ HTTP error: ${response.status}`)
+          // Continue polling even on error
+          if (attempts < maxAttempts) {
+            setTimeout(checkOnce, 1000)
+          }
           return
         }
 
@@ -232,48 +244,85 @@ export default function ScannerPage() {
           console.log(`[${timestamp}] ✅ Found active scan! ID: ${latestScan.scan_id}`)
           console.log(`[${timestamp}] 🔄 Switching to scan status polling...`)
 
-          clearInterval(checkInterval)
+          stopped = true
           setScanId(latestScan.scan_id)
           pollScanStatus(latestScan.scan_id)
         } else {
           console.log(`[${timestamp}] ⏳ No active scans yet, will retry... (${attempts}/${maxAttempts})`)
-        }
 
-        if (attempts >= maxAttempts) {
-          console.error(`[${timestamp}] ❌ Timeout: No active scans found after ${maxAttempts} attempts`)
-          clearInterval(checkInterval)
-          setScanning(false)
-          setScanStatus(null)
-          alert('Scan failed to start - no active scans detected after 60 seconds')
+          if (attempts >= maxAttempts) {
+            console.error(`[${timestamp}] ❌ Timeout: No active scans found after ${maxAttempts} attempts`)
+            stopped = true
+            setScanning(false)
+            setScanStatus(null)
+            alert('Scan failed to start - no active scans detected after 60 seconds')
+          } else {
+            // Schedule next check
+            setTimeout(checkOnce, 1000)
+          }
         }
       } catch (error) {
         console.error(`[${timestamp}] ❌ Error checking for active scans:`, error)
         console.error(`[${timestamp}] ❌ Error details:`, {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
+          name: error instanceof Error ? error.name : 'Unknown',
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
         })
+
+        // Continue polling even on error
+        if (attempts < maxAttempts) {
+          setTimeout(checkOnce, 1000)
+        } else {
+          stopped = true
+          setScanning(false)
+          setScanStatus(null)
+        }
       }
-    }, 1000) // Check every second
+    }
+
+    // Start the first check
+    checkOnce()
   }
 
   const pollScanStatus = async (id: string) => {
     console.log(`🔄 Starting to poll scan status for ID: ${id}`)
     let pollCount = 0
+    const startTime = Date.now()
+    const maxDuration = 600000 // 10 minutes
+    let stopped = false
 
-    const pollInterval = setInterval(async () => {
+    const pollOnce = async () => {
+      if (stopped) return
+
+      // Check if we've exceeded max duration
+      if (Date.now() - startTime > maxDuration) {
+        console.log('⏱️ 10 minute timeout reached, stopping poll')
+        stopped = true
+        setScanning(false)
+        return
+      }
+
       pollCount++
       const timestamp = new Date().toLocaleTimeString()
 
       try {
         console.log(`[${timestamp}] 📡 Poll #${pollCount}: Fetching status from ${API_URL}/api/v1/scanner/scan/${id}/status`)
 
-        const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`)
+        // Add timeout to fetch
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+        const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`, {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
 
         console.log(`[${timestamp}] 📡 Poll #${pollCount}: Response status: ${response.status}`)
 
         if (!response.ok) {
           console.error(`[${timestamp}] ❌ Poll #${pollCount}: HTTP error! status: ${response.status}`)
+          // Continue polling even on error
+          setTimeout(pollOnce, 1000)
           return
         }
 
@@ -291,37 +340,39 @@ export default function ScannerPage() {
           eta: status.eta
         })
 
-        // Log previous state for comparison
-        console.log(`[${timestamp}] 🔍 Poll #${pollCount}: Current scanStatus state BEFORE update:`, scanStatus)
-
         // Update state
         console.log(`[${timestamp}] ⚡ Poll #${pollCount}: Calling setScanStatus with new data...`)
         setScanStatus(status)
-
         console.log(`[${timestamp}] ✓ Poll #${pollCount}: setScanStatus called successfully`)
 
         if (status.status === 'completed') {
           console.log(`[${timestamp}] ✅ Poll #${pollCount}: Scan completed! Stopping poll and loading results.`)
-          clearInterval(pollInterval)
+          stopped = true
           setScanning(false)
           loadScanResults(id)
         } else if (status.status === 'failed') {
           console.error(`[${timestamp}] ❌ Poll #${pollCount}: Scan failed! Message: ${status.message}`)
-          clearInterval(pollInterval)
+          stopped = true
           setScanning(false)
         } else {
           console.log(`[${timestamp}] ⏳ Poll #${pollCount}: Scan still in progress... (${status.status})`)
+          // Schedule next poll
+          setTimeout(pollOnce, 1000)
         }
       } catch (error) {
         console.error(`[${timestamp}] ❌ Poll #${pollCount}: Error during polling:`, error)
+        console.error(`[${timestamp}] ❌ Error details:`, {
+          name: error instanceof Error ? error.name : 'Unknown',
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        })
+        // Continue polling even on error
+        setTimeout(pollOnce, 1000)
       }
-    }, 1000)
+    }
 
-    // Stop polling after 10 minutes
-    setTimeout(() => {
-      console.log('⏱️ 10 minute timeout reached, stopping poll')
-      clearInterval(pollInterval)
-    }, 600000)
+    // Start the first poll
+    pollOnce()
   }
 
   const loadScanResults = async (id: string) => {
