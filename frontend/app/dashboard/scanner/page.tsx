@@ -185,13 +185,24 @@ export default function ScannerPage() {
       try {
         const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`)
         const status = await response.json()
+
+        console.log('📊 Scan status update:', {
+          progress: status.progress,
+          message: status.message,
+          files: status.files_scanned,
+          nodes: status.nodes_found,
+          status: status.status
+        })
+
         setScanStatus(status)
 
         if (status.status === 'completed') {
+          console.log('✅ Scan completed!')
           clearInterval(pollInterval)
           setScanning(false)
           loadScanResults(id)
         } else if (status.status === 'failed') {
+          console.error('❌ Scan failed!')
           clearInterval(pollInterval)
           setScanning(false)
         }
@@ -423,25 +434,43 @@ export default function ScannerPage() {
             {/* Scan Progress */}
             {scanning && scanStatus && (
               <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Scan Progress</h2>
+                <div className="flex items-center space-x-3 mb-4">
+                  <span className="text-3xl animate-bounce">🪅</span>
+                  <h2 className="text-xl font-bold text-gray-900">Scanning Your Code...</h2>
+                </div>
                 <div className="mb-4">
-                  <div className="flex justify-between text-sm text-gray-600 mb-2">
-                    <span>{scanStatus.message}</span>
-                    <span>{scanStatus.progress.toFixed(0)}%</span>
+                  <div className="flex justify-between items-center text-sm text-gray-600 mb-2">
+                    <span className="font-medium">{scanStatus.message}</span>
+                    <span className="text-lg font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      {scanStatus.progress.toFixed(0)}%
+                    </span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                  <div className="relative w-full bg-gray-200 rounded-full h-6 overflow-hidden shadow-inner">
                     <div
-                      className="h-4 rounded-full transition-all duration-300"
+                      className="h-6 rounded-full transition-all duration-500 ease-out relative"
                       style={{
                         width: `${scanStatus.progress}%`,
-                        background: 'linear-gradient(90deg, #667eea 0%, #764ba2 14%, #f093fb 28%, #f5576c 42%, #feca57 57%, #48dbfb 71%, #0abde3 85%, #00d2d3 100%)'
+                        background: 'linear-gradient(90deg, #667eea 0%, #764ba2 14%, #f093fb 28%, #f5576c 42%, #feca57 57%, #48dbfb 71%, #0abde3 85%, #00d2d3 100%)',
+                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.4)'
                       }}
-                    ></div>
+                    >
+                      <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
+                    </div>
                   </div>
                 </div>
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>Files: {scanStatus.files_scanned}</span>
-                  <span>Nodes: {scanStatus.nodes_found}</span>
+                <div className="flex justify-between text-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-gray-500">📄 Files:</span>
+                    <span className="font-bold text-purple-600">{scanStatus.files_scanned}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-gray-500">🔗 Nodes:</span>
+                    <span className="font-bold text-pink-600">{scanStatus.nodes_found}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-gray-500">⚡ Status:</span>
+                    <span className="font-bold text-blue-600 capitalize">{scanStatus.status}</span>
+                  </div>
                 </div>
               </div>
             )}
