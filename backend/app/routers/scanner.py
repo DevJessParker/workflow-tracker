@@ -133,6 +133,12 @@ async def get_active_scans():
     for scan_id, status in SCAN_STATUS.items():
         if status["status"] not in ["completed", "failed"]:
             active.append(status)
+
+    print(f"📊 Active scans request: Found {len(active)} active scan(s)")
+    if active:
+        for scan in active:
+            print(f"   - {scan['scan_id']}: {scan['status']} - {scan['progress']:.1f}%")
+
     return {"active_scans": active, "count": len(active)}
 
 

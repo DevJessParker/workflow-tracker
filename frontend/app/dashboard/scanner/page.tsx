@@ -183,11 +183,11 @@ export default function ScannerPage() {
       })
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('POST_TIMEOUT')), 10000)
+        setTimeout(() => reject(new Error('POST_TIMEOUT')), 30000)
       )
 
       try {
-        console.log('⏳ Waiting for POST response (max 10 seconds)...')
+        console.log('⏳ Waiting for POST response (max 30 seconds)...')
         const response = await Promise.race([postPromise, timeoutPromise]) as Response
 
         console.log('📥 POST response received! Status:', response.status)
