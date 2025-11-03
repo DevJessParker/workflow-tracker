@@ -14,25 +14,43 @@ print(f"Python version: {sys.version}")
 print(f"Working directory: {os.getcwd()}")
 print(f"Script location: {__file__}")
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-print(f"Added to sys.path: {str(Path(__file__).parent.parent.parent)}")
+# Add parent directories to path for both standalone and Docker modes
+scanner_parent = str(Path(__file__).parent.parent.parent)  # /home/user/workflow-tracker
+scanner_dir = str(Path(__file__).parent.parent)  # /home/user/workflow-tracker/scanner
+sys.path.insert(0, scanner_parent)
+sys.path.insert(0, scanner_dir)
+print(f"Added to sys.path: {scanner_parent}")
+print(f"Added to sys.path: {scanner_dir}")
 
-# Try importing with error handling
+# Try importing with error handling - support both Docker (src.*) and standalone (scanner.*)
 print("\nAttempting to import modules...")
+IMPORTS_OK = False
+IMPORT_ERROR = None
+
+# Try Docker-style imports first (src.*)
 try:
     from src.config_loader import Config
     from src.graph.builder import WorkflowGraphBuilder
     from src.graph.renderer import WorkflowRenderer
     from src.models import WorkflowType
     IMPORTS_OK = True
-    IMPORT_ERROR = None
-    print("✓ All modules imported successfully")
-except Exception as e:
-    IMPORTS_OK = False
-    IMPORT_ERROR = str(e)
-    print(f"✗ ERROR: Failed to import modules: {e}")
-    traceback.print_exc()
+    print("✓ All modules imported successfully (Docker mode: src.*)")
+except Exception as docker_error:
+    print(f"✗ Docker-style imports failed: {docker_error}")
+    print("Attempting standalone imports (scanner.*)...")
+
+    # Try standalone imports (scanner.*)
+    try:
+        from scanner.config_loader import Config
+        from scanner.graph.builder import WorkflowGraphBuilder
+        from scanner.graph.renderer import WorkflowRenderer
+        from scanner.models import WorkflowType
+        IMPORTS_OK = True
+        print("✓ All modules imported successfully (Standalone mode: scanner.*)")
+    except Exception as standalone_error:
+        IMPORT_ERROR = f"Both import styles failed.\nDocker (src.*): {docker_error}\nStandalone (scanner.*): {standalone_error}"
+        print(f"✗ ERROR: {IMPORT_ERROR}")
+        traceback.print_exc()
 
 print("=" * 60)
 
