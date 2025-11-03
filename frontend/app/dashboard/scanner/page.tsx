@@ -132,6 +132,19 @@ export default function ScannerPage() {
       setScanResults(null)
       setDiagram(null)
 
+      // Set initial status immediately for UI feedback
+      setScanStatus({
+        scan_id: 'pending',
+        status: 'starting',
+        progress: 0,
+        message: 'Starting scan...',
+        files_scanned: 0,
+        nodes_found: 0
+      })
+
+      console.log('Starting scan with config:', config)
+      console.log('API URL:', API_URL)
+
       const response = await fetch(`${API_URL}/api/v1/scanner/scan`, {
         method: 'POST',
         headers: {
@@ -149,14 +162,21 @@ export default function ScannerPage() {
         }),
       })
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
       const data = await response.json()
+      console.log('Scan started:', data)
       setScanId(data.scan_id)
 
       // Poll for status
       pollScanStatus(data.scan_id)
     } catch (error) {
       console.error('Failed to start scan:', error)
+      alert(`Failed to start scan: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setScanning(false)
+      setScanStatus(null)
     }
   }
 
@@ -409,10 +429,13 @@ export default function ScannerPage() {
                     <span>{scanStatus.message}</span>
                     <span>{scanStatus.progress.toFixed(0)}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
                     <div
-                      className="bg-gradient-to-r from-purple-600 to-pink-600 h-3 rounded-full transition-all duration-300"
-                      style={{ width: `${scanStatus.progress}%` }}
+                      className="h-4 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${scanStatus.progress}%`,
+                        background: 'linear-gradient(90deg, #667eea 0%, #764ba2 14%, #f093fb 28%, #f5576c 42%, #feca57 57%, #48dbfb 71%, #0abde3 85%, #00d2d3 100%)'
+                      }}
                     ></div>
                   </div>
                 </div>
