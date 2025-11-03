@@ -8,6 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 
+# Import routers
+from app.routers import scanner
+
 # Create FastAPI app
 app = FastAPI(
     title="Pinata Code API",
@@ -27,6 +30,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(scanner.router)
 
 
 @app.get("/")
