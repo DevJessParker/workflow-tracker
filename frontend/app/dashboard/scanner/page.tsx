@@ -217,12 +217,7 @@ export default function ScannerPage() {
         const url = `${API_URL}/api/v1/scanner/scans/active`
         console.log(`[${timestamp}] 🔍 Attempt #${attempts}: Fetching from ${url}`)
 
-        // Add timeout to fetch
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
-
-        const response = await fetch(url, { signal: controller.signal })
-        clearTimeout(timeoutId)
+        const response = await fetch(url)
 
         console.log(`[${timestamp}] 📡 Response status: ${response.status} ${response.statusText}`)
 
@@ -308,14 +303,7 @@ export default function ScannerPage() {
       try {
         console.log(`[${timestamp}] 📡 Poll #${pollCount}: Fetching status from ${API_URL}/api/v1/scanner/scan/${id}/status`)
 
-        // Add timeout to fetch
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
-
-        const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`, {
-          signal: controller.signal
-        })
-        clearTimeout(timeoutId)
+        const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`)
 
         console.log(`[${timestamp}] 📡 Poll #${pollCount}: Response status: ${response.status}`)
 
