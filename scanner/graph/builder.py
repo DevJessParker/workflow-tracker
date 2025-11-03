@@ -311,7 +311,7 @@ class WorkflowGraphBuilder:
         Args:
             graph: Workflow graph to analyze
         """
-        from scanner.models import WorkflowType
+        from models import WorkflowType
         from collections import defaultdict
 
         print("  Inferring data flow edges...")
