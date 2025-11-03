@@ -173,34 +173,52 @@ export default function ScannerPage() {
       }
       console.log('📤 Request body:', JSON.stringify(requestBody, null, 2))
 
-      const response = await fetch(`${API_URL}/api/v1/scanner/scan`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      })
+      // Create abort controller for timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        console.error('⏱️ TIMEOUT: Request took longer than 10 seconds, aborting...')
+        controller.abort()
+      }, 10000)
 
-      console.log('📥 Got response, status:', response.status, response.statusText)
+      try {
+        const response = await fetch(`${API_URL}/api/v1/scanner/scan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ Response not OK. Status:', response.status, 'Body:', errorText)
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        clearTimeout(timeoutId)
+        console.log('📥 Got response, status:', response.status, response.statusText)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('❌ Response not OK. Status:', response.status, 'Body:', errorText)
+          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        }
+
+        console.log('📥 Parsing response JSON...')
+        const data = await response.json()
+        console.log('✅ Scan started successfully! Response data:', data)
+        console.log('🆔 Scan ID:', data.scan_id)
+
+        setScanId(data.scan_id)
+        console.log('✅ setScanId called with:', data.scan_id)
+
+        // Poll for status
+        console.log('🔄 About to start polling for scan ID:', data.scan_id)
+        pollScanStatus(data.scan_id)
+        console.log('✅ pollScanStatus called')
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId)
+        if (fetchError.name === 'AbortError') {
+          console.error('❌ FETCH ABORTED: Request timed out after 10 seconds')
+          throw new Error('Request timed out - backend took too long to respond')
+        }
+        throw fetchError
       }
-
-      console.log('📥 Parsing response JSON...')
-      const data = await response.json()
-      console.log('✅ Scan started successfully! Response data:', data)
-      console.log('🆔 Scan ID:', data.scan_id)
-
-      setScanId(data.scan_id)
-      console.log('✅ setScanId called with:', data.scan_id)
-
-      // Poll for status
-      console.log('🔄 About to start polling for scan ID:', data.scan_id)
-      pollScanStatus(data.scan_id)
-      console.log('✅ pollScanStatus called')
     } catch (error) {
       console.error('Failed to start scan:', error)
       alert(`Failed to start scan: ${error instanceof Error ? error.message : 'Unknown error'}`)
