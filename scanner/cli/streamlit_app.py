@@ -188,30 +188,15 @@ def main():
         st.session_state.output_files = None
     if 'generated_diagram' not in st.session_state:
         st.session_state.generated_diagram = None
-    if 'scan_complete_flag' not in st.session_state:
-        st.session_state.scan_complete_flag = False
     if 'scan_running' not in st.session_state:
         st.session_state.scan_running = False
     if 'stop_scan' not in st.session_state:
         st.session_state.stop_scan = False
     if 'scan_triggered' not in st.session_state:
         st.session_state.scan_triggered = False
-    if 'rerun_guard' not in st.session_state:
-        st.session_state.rerun_guard = 0
 
-    # Check if scan results exist
+    # Check if scan results exist (determines which tabs to show)
     has_results = st.session_state.scan_result is not None
-
-    # Reset flag after rerun (prevents rerun loop)
-    # Add guard to prevent infinite reruns
-    if st.session_state.scan_complete_flag:
-        st.session_state.scan_complete_flag = False
-        st.session_state.rerun_guard += 1
-        # If we've rerun too many times, something is wrong - stop
-        if st.session_state.rerun_guard > 2:
-            print("WARNING: Too many reruns detected, stopping rerun loop")
-            st.session_state.rerun_guard = 0
-            st.session_state.scan_complete_flag = False
 
     # Create tabbed interface
     if not has_results:
@@ -1106,54 +1091,59 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
             if st.session_state.stop_scan:
                 raise KeyboardInterrupt("Scan stopped by user")
 
-            if total > 0:
-                progress = current / total
-                pinata_position = int(progress * 100)
+            try:
+                if total > 0:
+                    progress = current / total
+                    pinata_position = int(progress * 100)
 
-                # Create combined progress bar and pinata overlay
-                combined_html = f"""
-                <div style="position: relative; width: 100%; margin-bottom: 5px;">
-                    <div style="
-                        width: 100%;
-                        height: 8px;
-                        background: linear-gradient(90deg,
-                            #667eea 0%,
-                            #764ba2 14%,
-                            #f093fb 28%,
-                            #f5576c 42%,
-                            #feca57 57%,
-                            #48dbfb 71%,
-                            #0abde3 85%,
-                            #00d2d3 100%
-                        );
-                        border-radius: 4px;
-                        overflow: hidden;
-                        position: relative;
-                    ">
+                    # Create combined progress bar and pinata overlay
+                    combined_html = f"""
+                    <div style="position: relative; width: 100%; margin-bottom: 5px;">
+                        <div style="
+                            width: 100%;
+                            height: 8px;
+                            background: linear-gradient(90deg,
+                                #667eea 0%,
+                                #764ba2 14%,
+                                #f093fb 28%,
+                                #f5576c 42%,
+                                #feca57 57%,
+                                #48dbfb 71%,
+                                #0abde3 85%,
+                                #00d2d3 100%
+                            );
+                            border-radius: 4px;
+                            overflow: hidden;
+                            position: relative;
+                        ">
+                            <div style="
+                                position: absolute;
+                                right: 0;
+                                width: {100 - pinata_position}%;
+                                height: 100%;
+                                background: #f0f0f0;
+                                transition: width 0.3s ease-out;
+                            "></div>
+                        </div>
                         <div style="
                             position: absolute;
-                            right: 0;
-                            width: {100 - pinata_position}%;
-                            height: 100%;
-                            background: #f0f0f0;
-                            transition: width 0.3s ease-out;
-                        "></div>
+                            left: {pinata_position}%;
+                            top: 4px;
+                            transform: translateX(-50%) translateY(-50%) scaleX(-1);
+                            font-size: 28px;
+                            transition: left 0.3s ease-out;
+                            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+                        ">🪅</div>
                     </div>
-                    <div style="
-                        position: absolute;
-                        left: {pinata_position}%;
-                        top: 4px;
-                        transform: translateX(-50%) translateY(-50%) scaleX(-1);
-                        font-size: 28px;
-                        transition: left 0.3s ease-out;
-                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
-                    ">🪅</div>
-                </div>
-                """
-                progress_placeholder.markdown(combined_html, unsafe_allow_html=True)
+                    """
+                    progress_placeholder.markdown(combined_html, unsafe_allow_html=True)
 
-            # Show status in a more compact way
-            status_placeholder.markdown(f"<small>{message}</small>", unsafe_allow_html=True)
+                # Show status in a more compact way
+                status_placeholder.markdown(f"<small>{message}</small>", unsafe_allow_html=True)
+            except Exception as e:
+                # Silently ignore WebSocket errors during progress updates
+                # These happen when the browser disconnects/reconnects
+                pass
 
         # Scan repository with progress updates
         status_placeholder.markdown("<small>🔍 Starting repository scan...</small>", unsafe_allow_html=True)
@@ -1175,17 +1165,13 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Reset scan state and trigger ONE rerun to show tabs
-        # scan_triggered is already False, so this won't cause duplicate execution
+        # Show instruction to navigate to tabs
+        st.info("📊 Navigate to the **Visualizations** tab above to view the workflow diagrams!")
+
+        # Reset scan state - NO RERUN NEEDED
+        # The tabs are already showing based on has_results = scan_result is not None
         st.session_state.scan_running = False
-        # Only rerun if we haven't already shown the tabs
-        if not st.session_state.scan_complete_flag:
-            st.session_state.scan_complete_flag = True
-            st.session_state.rerun_guard = 0  # Reset guard for next scan
-            st.rerun()
-        else:
-            # Already rerun once, don't do it again
-            st.session_state.scan_complete_flag = False
+        st.session_state.scan_triggered = False
 
     except KeyboardInterrupt as e:
         # Graceful stop requested by user
@@ -1193,7 +1179,6 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         status_placeholder.empty()
         st.session_state.scan_running = False
         st.warning(f"⏹️ Scan stopped by user")
-        st.rerun()
 
     except Exception as e:
         progress_placeholder.empty()
