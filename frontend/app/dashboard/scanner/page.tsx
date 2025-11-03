@@ -101,6 +101,17 @@ export default function ScannerPage() {
 
     // Load environment info
     loadEnvironment()
+
+    // Resume active scan after hot reload
+    const activeScanId = localStorage.getItem('activeScanId')
+    if (activeScanId && !scanning) {
+      console.log('🔄 Resuming active scan after hot reload:', activeScanId)
+      setScanning(true)
+      setScanId(activeScanId)
+
+      // Use setTimeout to avoid calling pollScanStatus before it's defined
+      setTimeout(() => pollScanStatus(activeScanId), 100)
+    }
   }, [router])
 
   // Debug: Log when scanStatus changes
@@ -199,6 +210,10 @@ export default function ScannerPage() {
         if (data.scan_id) {
           console.log('🎯 Got scan_id from POST:', data.scan_id)
           console.log('🔄 Starting direct scan status polling...')
+
+          // Store scan_id in localStorage to survive hot reload
+          localStorage.setItem('activeScanId', data.scan_id)
+
           setScanId(data.scan_id)
           pollScanStatus(data.scan_id)
         } else {
@@ -357,11 +372,18 @@ export default function ScannerPage() {
           console.log(`[${timestamp}] ✅ Poll #${pollCount}: Scan completed! Stopping poll and loading results.`)
           stopped = true
           setScanning(false)
+
+          // Clear active scan from localStorage
+          localStorage.removeItem('activeScanId')
+
           loadScanResults(id)
         } else if (status.status === 'failed') {
           console.error(`[${timestamp}] ❌ Poll #${pollCount}: Scan failed! Message: ${status.message}`)
           stopped = true
           setScanning(false)
+
+          // Clear active scan from localStorage
+          localStorage.removeItem('activeScanId')
         } else {
           console.log(`[${timestamp}] ⏳ Poll #${pollCount}: Scan still in progress... (${status.status})`)
           // Schedule next poll
