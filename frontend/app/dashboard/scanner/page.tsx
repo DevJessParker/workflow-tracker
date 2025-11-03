@@ -22,6 +22,8 @@ interface ScanStatus {
   message: string
   files_scanned: number
   nodes_found: number
+  eta?: string
+  total_files?: number
 }
 
 interface WorkflowNode {
@@ -434,17 +436,33 @@ export default function ScannerPage() {
             {/* Scan Progress */}
             {scanning && scanStatus && (
               <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <div className="flex items-center space-x-3 mb-4">
-                  <span className="text-3xl animate-bounce">🪅</span>
-                  <h2 className="text-xl font-bold text-gray-900">Scanning Your Code...</h2>
-                </div>
-                <div className="mb-4">
-                  <div className="flex justify-between items-center text-sm text-gray-600 mb-2">
-                    <span className="font-medium">{scanStatus.message}</span>
-                    <span className="text-lg font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                      {scanStatus.progress.toFixed(0)}%
-                    </span>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <span className="text-3xl animate-bounce">🪅</span>
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900">
+                        {scanStatus.status === 'initializing' && 'Initializing...'}
+                        {scanStatus.status === 'discovering' && 'Discovering Files...'}
+                        {scanStatus.status === 'scanning' && 'Scanning Your Code...'}
+                        {scanStatus.status === 'queued' && 'Queued...'}
+                      </h2>
+                      <p className="text-sm text-gray-500">{scanStatus.message}</p>
+                    </div>
                   </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      {scanStatus.progress.toFixed(0)}%
+                    </div>
+                    {scanStatus.eta && scanStatus.status === 'scanning' && (
+                      <div className="text-xs text-gray-500">
+                        ⏱️ ETA: {scanStatus.eta}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mb-4">
                   <div className="relative w-full bg-gray-200 rounded-full h-6 overflow-hidden shadow-inner">
                     <div
                       className="h-6 rounded-full transition-all duration-500 ease-out relative"
@@ -458,18 +476,32 @@ export default function ScannerPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-gray-500">📄 Files:</span>
-                    <span className="font-bold text-purple-600">{scanStatus.files_scanned}</span>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-purple-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {scanStatus.files_scanned.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-600">Files Processed</div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-gray-500">🔗 Nodes:</span>
-                    <span className="font-bold text-pink-600">{scanStatus.nodes_found}</span>
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {scanStatus.total_files ? scanStatus.total_files.toLocaleString() : '...'}
+                    </div>
+                    <div className="text-xs text-gray-600">Total Files</div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-gray-500">⚡ Status:</span>
-                    <span className="font-bold text-blue-600 capitalize">{scanStatus.status}</span>
+                  <div className="bg-pink-50 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-pink-600">
+                      {scanStatus.nodes_found.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-600">Nodes Found</div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                    <div className="text-lg font-bold text-green-600 capitalize">
+                      {scanStatus.status}
+                    </div>
+                    <div className="text-xs text-gray-600">Status</div>
                   </div>
                 </div>
               </div>

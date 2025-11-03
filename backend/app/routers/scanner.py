@@ -59,6 +59,8 @@ class ScanStatus(BaseModel):
     message: str
     files_scanned: int
     nodes_found: int
+    eta: Optional[str] = None
+    total_files: Optional[int] = None
 
 
 # In-memory storage for scan results (replace with Redis/DB in production)
@@ -91,7 +93,9 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
         "progress": 0.0,
         "message": "Scan queued",
         "files_scanned": 0,
-        "nodes_found": 0
+        "nodes_found": 0,
+        "eta": None,
+        "total_files": None
     }
 
     # Queue the scan as a background task
@@ -213,9 +217,12 @@ async def get_scan_diagram(
 async def run_scan(scan_id: str, request: ScanRequest):
     """Background task to run the actual scan"""
     try:
-        # Update status
-        SCAN_STATUS[scan_id]["status"] = "running"
-        SCAN_STATUS[scan_id]["message"] = "Scanning repository..."
+        # Update status to initializing
+        SCAN_STATUS[scan_id]["status"] = "initializing"
+        SCAN_STATUS[scan_id]["message"] = "Initializing scanner..."
+        SCAN_STATUS[scan_id]["progress"] = 0.0
+
+        import re
 
         # Build configuration
         config = {
@@ -237,15 +244,50 @@ async def run_scan(scan_id: str, request: ScanRequest):
         }
 
         # Progress callback
+        files_discovered = False
         def update_progress(current, total, message):
+            nonlocal files_discovered
+
             if total > 0:
                 progress = (current / total) * 100
                 SCAN_STATUS[scan_id]["progress"] = progress
-                SCAN_STATUS[scan_id]["message"] = message
                 SCAN_STATUS[scan_id]["files_scanned"] = current
+                SCAN_STATUS[scan_id]["total_files"] = total
+
+                # Extract ETA from message if present (format: "ETA: 2m 15s")
+                eta_match = re.search(r'ETA:\s*([^\|]+)', message)
+                if eta_match:
+                    SCAN_STATUS[scan_id]["eta"] = eta_match.group(1).strip()
+
+                # Extract nodes count if present (format: "Nodes: 123")
+                nodes_match = re.search(r'Nodes:\s*(\d+)', message)
+                if nodes_match:
+                    SCAN_STATUS[scan_id]["nodes_found"] = int(nodes_match.group(1).replace(',', ''))
+
+                # Update status based on progress
+                if current == 0:
+                    if not files_discovered:
+                        SCAN_STATUS[scan_id]["status"] = "discovering"
+                        SCAN_STATUS[scan_id]["message"] = f"Discovering files... Found {total:,} files"
+                        files_discovered = True
+                    else:
+                        SCAN_STATUS[scan_id]["status"] = "scanning"
+                        SCAN_STATUS[scan_id]["message"] = "Starting scan..."
+                        SCAN_STATUS[scan_id]["eta"] = "Calculating..."
+                else:
+                    SCAN_STATUS[scan_id]["status"] = "scanning"
+                    # Use cleaner message format
+                    SCAN_STATUS[scan_id]["message"] = f"Scanning... {current:,}/{total:,} files"
+            else:
+                SCAN_STATUS[scan_id]["message"] = message
 
         # Run scan
         builder = WorkflowGraphBuilder(config)
+
+        # Update to discovering status
+        SCAN_STATUS[scan_id]["status"] = "discovering"
+        SCAN_STATUS[scan_id]["message"] = "Discovering files..."
+
         result = builder.build(request.repo_path, progress_callback=update_progress)
 
         # Store results
@@ -257,6 +299,8 @@ async def run_scan(scan_id: str, request: ScanRequest):
         SCAN_STATUS[scan_id]["message"] = "Scan completed successfully"
         SCAN_STATUS[scan_id]["files_scanned"] = result.files_scanned
         SCAN_STATUS[scan_id]["nodes_found"] = len(result.graph.nodes)
+        SCAN_STATUS[scan_id]["eta"] = "0m 0s"
+        SCAN_STATUS[scan_id]["total_files"] = result.files_scanned
 
         # Render outputs
         renderer = WorkflowRenderer(config)
@@ -265,7 +309,10 @@ async def run_scan(scan_id: str, request: ScanRequest):
     except Exception as e:
         SCAN_STATUS[scan_id]["status"] = "failed"
         SCAN_STATUS[scan_id]["message"] = f"Scan failed: {str(e)}"
+        SCAN_STATUS[scan_id]["eta"] = None
         print(f"Scan {scan_id} failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @router.get("/repositories")
