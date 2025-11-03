@@ -202,6 +202,7 @@ export default function ScannerPage() {
 
   const pollForActiveScan = () => {
     console.log('🔄 pollForActiveScan: Starting to look for active scans...')
+    console.log('🔗 API_URL:', API_URL)
     let attempts = 0
     const maxAttempts = 60 // Poll for up to 60 seconds
 
@@ -210,12 +211,21 @@ export default function ScannerPage() {
       const timestamp = new Date().toLocaleTimeString()
 
       try {
-        console.log(`[${timestamp}] 🔍 Attempt #${attempts}: Checking for active scans...`)
+        const url = `${API_URL}/api/v1/scanner/scans/active`
+        console.log(`[${timestamp}] 🔍 Attempt #${attempts}: Fetching from ${url}`)
 
-        const response = await fetch(`${API_URL}/api/v1/scanner/scans/active`)
+        const response = await fetch(url)
+
+        console.log(`[${timestamp}] 📡 Response status: ${response.status} ${response.statusText}`)
+
+        if (!response.ok) {
+          console.error(`[${timestamp}] ❌ HTTP error: ${response.status}`)
+          return
+        }
+
         const data = await response.json()
 
-        console.log(`[${timestamp}] 📊 Active scans response:`, data)
+        console.log(`[${timestamp}] 📊 Active scans response:`, JSON.stringify(data, null, 2))
 
         if (data.active_scans && data.active_scans.length > 0) {
           const latestScan = data.active_scans[data.active_scans.length - 1]
@@ -238,6 +248,11 @@ export default function ScannerPage() {
         }
       } catch (error) {
         console.error(`[${timestamp}] ❌ Error checking for active scans:`, error)
+        console.error(`[${timestamp}] ❌ Error details:`, {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        })
       }
     }, 1000) // Check every second
   }
