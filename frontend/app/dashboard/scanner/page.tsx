@@ -160,7 +160,6 @@ export default function ScannerPage() {
       console.log('🚀 Starting scan with config:', config)
       console.log('🔗 API URL:', API_URL)
 
-      console.log('📤 Sending POST request to:', `${API_URL}/api/v1/scanner/scan`)
       const requestBody = {
         repo_path: config.repoPath,
         source_type: config.sourceType,
@@ -171,82 +170,76 @@ export default function ScannerPage() {
         detect_messages: config.detectMessages,
         detect_transforms: config.detectTransforms,
       }
-      console.log('📤 Request body:', JSON.stringify(requestBody, null, 2))
 
-      // Create abort controller for timeout
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => {
-        console.error('⏱️ TIMEOUT: Request took longer than 10 seconds, aborting...')
-        controller.abort()
-      }, 10000)
+      // Start polling for active scans IMMEDIATELY (don't wait for POST)
+      console.log('🔄 Starting to poll for active scans immediately...')
+      pollForActiveScan()
 
-      try {
-        const response = await fetch(`${API_URL}/api/v1/scanner/scan`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        })
+      // Send POST request (fire-and-forget, don't wait for response)
+      console.log('📤 Sending POST request in background:', `${API_URL}/api/v1/scanner/scan`)
+      fetch(`${API_URL}/api/v1/scanner/scan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      }).then(response => {
+        console.log('📥 POST response received (async):', response.status)
+        return response.json()
+      }).then(data => {
+        console.log('✅ Scan started (async confirmation):', data.scan_id)
+      }).catch(error => {
+        console.error('❌ POST request failed (but polling continues):', error)
+      })
 
-        clearTimeout(timeoutId)
-        console.log('📥 Got response, status:', response.status, response.statusText)
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error('❌ Response not OK. Status:', response.status, 'Body:', errorText)
-          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
-        }
-
-        console.log('📥 Parsing response JSON...')
-        const data = await response.json()
-        console.log('✅ Scan started successfully! Response data:', data)
-        console.log('🆔 Scan ID:', data.scan_id)
-
-        setScanId(data.scan_id)
-        console.log('✅ setScanId called with:', data.scan_id)
-
-        // Poll for status
-        console.log('🔄 About to start polling for scan ID:', data.scan_id)
-        pollScanStatus(data.scan_id)
-        console.log('✅ pollScanStatus called')
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId)
-        if (fetchError.name === 'AbortError') {
-          console.error('❌ FETCH ABORTED: Request timed out after 10 seconds')
-          console.log('🔄 POST timed out, checking for active scans as fallback...')
-
-          // Fallback: Check for active scans
-          try {
-            const activeResponse = await fetch(`${API_URL}/api/v1/scanner/scans/active`)
-            const activeData = await activeResponse.json()
-            console.log('📊 Active scans found:', activeData)
-
-            if (activeData.active_scans && activeData.active_scans.length > 0) {
-              const latestScan = activeData.active_scans[activeData.active_scans.length - 1]
-              console.log(`✅ Found active scan! ID: ${latestScan.scan_id}`)
-              console.log('🔄 Starting to poll active scan...')
-              setScanId(latestScan.scan_id)
-              pollScanStatus(latestScan.scan_id)
-              return // Success! Exit without throwing error
-            } else {
-              console.error('❌ No active scans found')
-              throw new Error('Request timed out and no active scans found')
-            }
-          } catch (fallbackError) {
-            console.error('❌ Fallback also failed:', fallbackError)
-            throw new Error('Request timed out - please try again')
-          }
-        }
-        throw fetchError
-      }
     } catch (error) {
       console.error('Failed to start scan:', error)
-      alert(`Failed to start scan: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      alert(`Failed to start scan: ${error instanceof Error ?.message : 'Unknown error'}`)
       setScanning(false)
       setScanStatus(null)
     }
+  }
+
+  const pollForActiveScan = () => {
+    console.log('🔄 pollForActiveScan: Starting to look for active scans...')
+    let attempts = 0
+    const maxAttempts = 60 // Poll for up to 60 seconds
+
+    const checkInterval = setInterval(async () => {
+      attempts++
+      const timestamp = new Date().toLocaleTimeString()
+
+      try {
+        console.log(`[${timestamp}] 🔍 Attempt #${attempts}: Checking for active scans...`)
+
+        const response = await fetch(`${API_URL}/api/v1/scanner/scans/active`)
+        const data = await response.json()
+
+        console.log(`[${timestamp}] 📊 Active scans response:`, data)
+
+        if (data.active_scans && data.active_scans.length > 0) {
+          const latestScan = data.active_scans[data.active_scans.length - 1]
+          console.log(`[${timestamp}] ✅ Found active scan! ID: ${latestScan.scan_id}`)
+          console.log(`[${timestamp}] 🔄 Switching to scan status polling...`)
+
+          clearInterval(checkInterval)
+          setScanId(latestScan.scan_id)
+          pollScanStatus(latestScan.scan_id)
+        } else {
+          console.log(`[${timestamp}] ⏳ No active scans yet, will retry... (${attempts}/${maxAttempts})`)
+        }
+
+        if (attempts >= maxAttempts) {
+          console.error(`[${timestamp}] ❌ Timeout: No active scans found after ${maxAttempts} attempts`)
+          clearInterval(checkInterval)
+          setScanning(false)
+          setScanStatus(null)
+          alert('Scan failed to start - no active scans detected after 60 seconds')
+        }
+      } catch (error) {
+        console.error(`[${timestamp}] ❌ Error checking for active scans:`, error)
+      }
+    }, 1000) // Check every second
   }
 
   const pollScanStatus = async (id: string) => {
