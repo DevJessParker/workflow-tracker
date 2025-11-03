@@ -171,26 +171,39 @@ export default function ScannerPage() {
         detect_transforms: config.detectTransforms,
       }
 
-      // Start polling for active scans IMMEDIATELY (don't wait for POST)
-      console.log('🔄 Starting to poll for active scans immediately...')
-      pollForActiveScan()
+      console.log('📤 Sending POST request to start scan:', `${API_URL}/api/v1/scanner/scan`)
 
-      // Send POST request (fire-and-forget, don't wait for response)
-      console.log('📤 Sending POST request in background:', `${API_URL}/api/v1/scanner/scan`)
-      fetch(`${API_URL}/api/v1/scanner/scan`, {
+      // Try to get scan_id from POST with a 10-second timeout
+      const postPromise = fetch(`${API_URL}/api/v1/scanner/scan`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
-      }).then(response => {
-        console.log('📥 POST response received (async):', response.status)
-        return response.json()
-      }).then(data => {
-        console.log('✅ Scan started (async confirmation):', data.scan_id)
-      }).catch(error => {
-        console.error('❌ POST request failed (but polling continues):', error)
       })
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('POST_TIMEOUT')), 10000)
+      )
+
+      try {
+        const response = await Promise.race([postPromise, timeoutPromise]) as Response
+        const data = await response.json()
+
+        console.log('✅ POST response received:', data)
+
+        if (data.scan_id) {
+          console.log('🎯 Got scan_id from POST:', data.scan_id)
+          setScanId(data.scan_id)
+          pollScanStatus(data.scan_id)
+        } else {
+          console.log('⚠️ POST succeeded but no scan_id, falling back to polling for active scans')
+          pollForActiveScan()
+        }
+      } catch (error) {
+        console.log('⏱️ POST timed out or failed, falling back to polling for active scans:', error)
+        pollForActiveScan()
+      }
 
     } catch (error) {
       console.error('Failed to start scan:', error)
