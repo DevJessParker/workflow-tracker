@@ -1,5 +1,5 @@
 [server]
-# Disable file watcher to prevent flickering when output files are written
+# CRITICAL: Disable file watcher to prevent flickering when output files are written
 fileWatcherType = "none"
 
 # Disable auto-reload on file changes
@@ -8,13 +8,35 @@ runOnSave = false
 # Set headless mode for better stability
 headless = true
 
+# Disable CORS checking for local development
+enableCORS = false
+
+# Disable xsrf protection for local use
+enableXsrfProtection = false
+
+# Increase max message size to prevent truncation
+maxMessageSize = 200
+
 [browser]
-# Automatically open browser (set to false if running remotely)
+# Don't gather usage stats
 gatherUsageStats = false
 
 [client]
 # Disable toolbar to reduce UI flickering
 toolbarMode = "minimal"
 
-# Show error details
+# Show error details for debugging
 showErrorDetails = true
+
+# CRITICAL: Don't reload on focus
+caching = true
+
+[runner]
+# CRITICAL: Don't watch for module changes
+magicEnabled = false
+
+# Fast rerun mode
+fastReruns = false
+
+# Post script auto-rerun
+postScriptGC = true

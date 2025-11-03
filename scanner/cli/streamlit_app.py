@@ -196,13 +196,22 @@ def main():
         st.session_state.stop_scan = False
     if 'scan_triggered' not in st.session_state:
         st.session_state.scan_triggered = False
+    if 'rerun_guard' not in st.session_state:
+        st.session_state.rerun_guard = 0
 
     # Check if scan results exist
     has_results = st.session_state.scan_result is not None
 
     # Reset flag after rerun (prevents rerun loop)
+    # Add guard to prevent infinite reruns
     if st.session_state.scan_complete_flag:
         st.session_state.scan_complete_flag = False
+        st.session_state.rerun_guard += 1
+        # If we've rerun too many times, something is wrong - stop
+        if st.session_state.rerun_guard > 2:
+            print("WARNING: Too many reruns detected, stopping rerun loop")
+            st.session_state.rerun_guard = 0
+            st.session_state.scan_complete_flag = False
 
     # Create tabbed interface
     if not has_results:
@@ -249,25 +258,27 @@ def render_scan_tab():
             repo_path = st.text_input(
                 "Repository Path",
                 value=default_repo,
-                help="Path to the repository to scan"
+                help="Path to the repository to scan",
+                key="repo_path_input"
             )
 
             # File extensions
             extensions = st.text_input(
                 "File Extensions",
                 value=".cs,.ts,.js",
-                help="Comma-separated list of file extensions to scan"
+                help="Comma-separated list of file extensions to scan",
+                key="extensions_input"
             )
 
             st.markdown("**Detection Options**")
             col1, col2 = st.columns(2)
             with col1:
-                detect_database = st.checkbox("Database Operations", value=True)
-                detect_api = st.checkbox("API Calls", value=True)
-                detect_files = st.checkbox("File I/O", value=True)
+                detect_database = st.checkbox("Database Operations", value=True, key="detect_db_checkbox")
+                detect_api = st.checkbox("API Calls", value=True, key="detect_api_checkbox")
+                detect_files = st.checkbox("File I/O", value=True, key="detect_files_checkbox")
             with col2:
-                detect_messages = st.checkbox("Message Queues", value=True)
-                detect_transforms = st.checkbox("Data Transforms", value=True)
+                detect_messages = st.checkbox("Message Queues", value=True, key="detect_msg_checkbox")
+                detect_transforms = st.checkbox("Data Transforms", value=True, key="detect_transforms_checkbox")
 
             # Scan button inside form (disabled when scanning)
             submitted = st.form_submit_button(
@@ -1164,11 +1175,17 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Reset scan state and trigger rerun to show tabs
+        # Reset scan state and trigger ONE rerun to show tabs
         # scan_triggered is already False, so this won't cause duplicate execution
         st.session_state.scan_running = False
-        st.session_state.scan_complete_flag = True
-        st.rerun()
+        # Only rerun if we haven't already shown the tabs
+        if not st.session_state.scan_complete_flag:
+            st.session_state.scan_complete_flag = True
+            st.session_state.rerun_guard = 0  # Reset guard for next scan
+            st.rerun()
+        else:
+            # Already rerun once, don't do it again
+            st.session_state.scan_complete_flag = False
 
     except KeyboardInterrupt as e:
         # Graceful stop requested by user
