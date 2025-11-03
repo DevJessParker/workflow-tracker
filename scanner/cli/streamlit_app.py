@@ -14,13 +14,10 @@ print(f"Python version: {sys.version}")
 print(f"Working directory: {os.getcwd()}")
 print(f"Script location: {__file__}")
 
-# Add parent directories to path for both standalone and Docker modes
+# Add parent directory to path to enable importing scanner as a package
 scanner_parent = str(Path(__file__).parent.parent.parent)  # /home/user/workflow-tracker
-scanner_dir = str(Path(__file__).parent.parent)  # /home/user/workflow-tracker/scanner
 sys.path.insert(0, scanner_parent)
-sys.path.insert(0, scanner_dir)
 print(f"Added to sys.path: {scanner_parent}")
-print(f"Added to sys.path: {scanner_dir}")
 
 # Try importing with error handling - support both Docker (src.*) and standalone (scanner.*)
 print("\nAttempting to import modules...")
@@ -40,6 +37,7 @@ except Exception as docker_error:
     print("Attempting standalone imports (scanner.*)...")
 
     # Try standalone imports (scanner.*)
+    # The scanner directory must be importable as a package from scanner_parent
     try:
         from scanner.config_loader import Config
         from scanner.graph.builder import WorkflowGraphBuilder
@@ -50,6 +48,7 @@ except Exception as docker_error:
     except Exception as standalone_error:
         IMPORT_ERROR = f"Both import styles failed.\nDocker (src.*): {docker_error}\nStandalone (scanner.*): {standalone_error}"
         print(f"✗ ERROR: {IMPORT_ERROR}")
+        print(f"\nCurrent sys.path: {sys.path[:3]}")
         traceback.print_exc()
 
 print("=" * 60)
