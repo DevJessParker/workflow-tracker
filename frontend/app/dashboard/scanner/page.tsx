@@ -157,36 +157,50 @@ export default function ScannerPage() {
         nodes_found: 0
       })
 
-      console.log('Starting scan with config:', config)
-      console.log('API URL:', API_URL)
+      console.log('🚀 Starting scan with config:', config)
+      console.log('🔗 API URL:', API_URL)
+
+      console.log('📤 Sending POST request to:', `${API_URL}/api/v1/scanner/scan`)
+      const requestBody = {
+        repo_path: config.repoPath,
+        source_type: config.sourceType,
+        file_extensions: config.fileExtensions,
+        detect_database: config.detectDatabase,
+        detect_api: config.detectApi,
+        detect_files: config.detectFiles,
+        detect_messages: config.detectMessages,
+        detect_transforms: config.detectTransforms,
+      }
+      console.log('📤 Request body:', JSON.stringify(requestBody, null, 2))
 
       const response = await fetch(`${API_URL}/api/v1/scanner/scan`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          repo_path: config.repoPath,
-          source_type: config.sourceType,
-          file_extensions: config.fileExtensions,
-          detect_database: config.detectDatabase,
-          detect_api: config.detectApi,
-          detect_files: config.detectFiles,
-          detect_messages: config.detectMessages,
-          detect_transforms: config.detectTransforms,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
+      console.log('📥 Got response, status:', response.status, response.statusText)
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        console.error('❌ Response not OK. Status:', response.status, 'Body:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
       }
 
+      console.log('📥 Parsing response JSON...')
       const data = await response.json()
-      console.log('Scan started:', data)
+      console.log('✅ Scan started successfully! Response data:', data)
+      console.log('🆔 Scan ID:', data.scan_id)
+
       setScanId(data.scan_id)
+      console.log('✅ setScanId called with:', data.scan_id)
 
       // Poll for status
+      console.log('🔄 About to start polling for scan ID:', data.scan_id)
       pollScanStatus(data.scan_id)
+      console.log('✅ pollScanStatus called')
     } catch (error) {
       console.error('Failed to start scan:', error)
       alert(`Failed to start scan: ${error instanceof Error ? error.message : 'Unknown error'}`)
