@@ -7,6 +7,7 @@ import IndividualDashboard from '@/components/dashboards/IndividualDashboard'
 import TeamDashboard from '@/components/dashboards/TeamDashboard'
 import EmployeeDashboard from '@/components/dashboards/EmployeeDashboard'
 import CompanyDashboard from '@/components/dashboards/CompanyDashboard'
+import DashboardSwitcher from '@/components/DashboardSwitcher'
 import type { User, UserRole } from '@/contexts/AuthContext'
 
 export default function DashboardPage() {
@@ -145,6 +146,9 @@ export default function DashboardPage() {
 
       {/* Render appropriate dashboard */}
       {getDashboardComponent()}
+
+      {/* Dev Dashboard Switcher (only visible in development) */}
+      <DashboardSwitcher currentUser={user} />
     </div>
   )
 }
