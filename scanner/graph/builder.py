@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from ..models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
-from ..scanner import CSharpScanner, TypeScriptScanner, ReactScanner
+from ..scanner import CSharpScanner, TypeScriptScanner, ReactScanner, AngularScanner, WPFScanner
 
 
 class WorkflowGraphBuilder:
@@ -26,9 +26,11 @@ class WorkflowGraphBuilder:
         scanner_config = self.config.get('scanner', {})
 
         scanners = [
-            CSharpScanner(scanner_config),
-            TypeScriptScanner(scanner_config),
-            ReactScanner(scanner_config),  # UI workflow detection
+            CSharpScanner(scanner_config),       # C# backend code
+            TypeScriptScanner(scanner_config),   # TypeScript/JavaScript
+            ReactScanner(scanner_config),        # React UI workflows
+            AngularScanner(scanner_config),      # Angular UI workflows
+            WPFScanner(scanner_config),          # WPF desktop UI workflows
         ]
 
         return scanners
