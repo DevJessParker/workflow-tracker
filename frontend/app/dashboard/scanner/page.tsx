@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useScanWebSocket, ConnectionStatus } from '../../hooks/useScanWebSocket'
 
 interface ScanConfig {
   repoPath: string
@@ -85,8 +86,10 @@ export default function ScannerPage() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null)
   const [scanResults, setScanResults] = useState<ScanResults | null>(null)
   const [diagram, setDiagram] = useState<string | null>(null)
+  const [wsConnectionStatus, setWsConnectionStatus] = useState<ConnectionStatus>('disconnected')
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://')
 
   useEffect(() => {
     // Check authentication
@@ -101,31 +104,7 @@ export default function ScannerPage() {
 
     // Load environment info
     loadEnvironment()
-
-    // Resume active scan after hot reload
-    const activeScanId = localStorage.getItem('activeScanId')
-    if (activeScanId && !scanning) {
-      console.log('🔄 Resuming active scan after hot reload:', activeScanId)
-      setScanning(true)
-      setScanId(activeScanId)
-
-      // Use setTimeout to avoid calling pollScanStatus before it's defined
-      setTimeout(() => pollScanStatus(activeScanId), 100)
-    }
   }, [router])
-
-  // Debug: Log when scanStatus changes
-  useEffect(() => {
-    const timestamp = new Date().toLocaleTimeString()
-    console.log(`[${timestamp}] 🔄 REACT STATE CHANGE: scanStatus updated to:`, scanStatus)
-    if (scanStatus) {
-      console.log(`[${timestamp}] 🔄 Progress bar should show: ${scanStatus.progress}%`)
-      console.log(`[${timestamp}] 🔄 Files: ${scanStatus.files_scanned}/${scanStatus.total_files || '?'}`)
-      console.log(`[${timestamp}] 🔄 Nodes: ${scanStatus.nodes_found}`)
-      console.log(`[${timestamp}] 🔄 Status: ${scanStatus.status}`)
-      console.log(`[${timestamp}] 🔄 ETA: ${scanStatus.eta || 'N/A'}`)
-    }
-  }, [scanStatus])
 
   const loadEnvironment = async () => {
     try {
@@ -157,8 +136,6 @@ export default function ScannerPage() {
       setScanning(true)
       setScanResults(null)
       setDiagram(null)
-
-      // Set initial status immediately for UI feedback
       setScanStatus({
         scan_id: 'pending',
         status: 'starting',
@@ -184,8 +161,7 @@ export default function ScannerPage() {
 
       console.log('📤 Sending POST request to start scan:', `${API_URL}/api/v1/scanner/scan`)
 
-      // Try to get scan_id from POST with a 10-second timeout
-      const postPromise = fetch(`${API_URL}/api/v1/scanner/scan`, {
+      const response = await fetch(`${API_URL}/api/v1/scanner/scan`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -193,39 +169,16 @@ export default function ScannerPage() {
         body: JSON.stringify(requestBody),
       })
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('POST_TIMEOUT')), 30000)
-      )
-
-      try {
-        console.log('⏳ Waiting for POST response (max 30 seconds)...')
-        const response = await Promise.race([postPromise, timeoutPromise]) as Response
-
-        console.log('📥 POST response received! Status:', response.status)
-
-        const data = await response.json()
-
-        console.log('✅ POST response data:', JSON.stringify(data, null, 2))
-
-        if (data.scan_id) {
-          console.log('🎯 Got scan_id from POST:', data.scan_id)
-          console.log('🔄 Starting direct scan status polling...')
-
-          // Store scan_id in localStorage to survive hot reload
-          localStorage.setItem('activeScanId', data.scan_id)
-
-          setScanId(data.scan_id)
-          pollScanStatus(data.scan_id)
-        } else {
-          console.log('⚠️ POST succeeded but no scan_id in response, falling back to polling for active scans')
-          console.log('⚠️ Response keys:', Object.keys(data))
-          pollForActiveScan()
-        }
-      } catch (error) {
-        console.log('⏱️ POST timed out or failed:', error instanceof Error ? error.message : String(error))
-        console.log('🔄 Falling back to polling for active scans...')
-        pollForActiveScan()
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
+
+      const data = await response.json()
+      console.log('✅ Scan started successfully:', data)
+      console.log('🎯 Scan ID:', data.scan_id)
+
+      // Set scan ID to trigger WebSocket connection
+      setScanId(data.scan_id)
 
     } catch (error) {
       console.error('Failed to start scan:', error)
@@ -235,191 +188,68 @@ export default function ScannerPage() {
     }
   }
 
-  const pollForActiveScan = () => {
-    console.log('🔄 pollForActiveScan: Starting to look for active scans...')
-    console.log('🔗 API_URL:', API_URL)
-    let attempts = 0
-    const maxAttempts = 60 // Poll for up to 60 seconds
-    let stopped = false
-
-    const checkOnce = async () => {
-      if (stopped) return
-
-      attempts++
-      const timestamp = new Date().toLocaleTimeString()
-
-      try {
-        const url = `${API_URL}/api/v1/scanner/scans/active`
-        console.log(`[${timestamp}] 🔍 Attempt #${attempts}: Fetching from ${url}`)
-
-        const response = await fetch(url)
-
-        console.log(`[${timestamp}] 📡 Response status: ${response.status} ${response.statusText}`)
-
-        if (!response.ok) {
-          console.error(`[${timestamp}] ❌ HTTP error: ${response.status}`)
-          // Continue polling even on error
-          if (attempts < maxAttempts) {
-            setTimeout(checkOnce, 1000)
-          }
-          return
-        }
-
-        const data = await response.json()
-
-        console.log(`[${timestamp}] 📊 Active scans response:`, JSON.stringify(data, null, 2))
-
-        if (data.active_scans && data.active_scans.length > 0) {
-          const latestScan = data.active_scans[data.active_scans.length - 1]
-          console.log(`[${timestamp}] ✅ Found active scan! ID: ${latestScan.scan_id}`)
-          console.log(`[${timestamp}] 🔄 Switching to scan status polling...`)
-
-          stopped = true
-          setScanId(latestScan.scan_id)
-          pollScanStatus(latestScan.scan_id)
-        } else {
-          console.log(`[${timestamp}] ⏳ No active scans yet, will retry... (${attempts}/${maxAttempts})`)
-
-          if (attempts >= maxAttempts) {
-            console.error(`[${timestamp}] ❌ Timeout: No active scans found after ${maxAttempts} attempts`)
-            stopped = true
-            setScanning(false)
-            setScanStatus(null)
-            alert('Scan failed to start - no active scans detected after 60 seconds')
-          } else {
-            // Schedule next check
-            setTimeout(checkOnce, 1000)
-          }
-        }
-      } catch (error) {
-        console.error(`[${timestamp}] ❌ Error checking for active scans:`, error)
-        console.error(`[${timestamp}] ❌ Error details:`, {
-          name: error instanceof Error ? error.name : 'Unknown',
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        })
-
-        // Continue polling even on error
-        if (attempts < maxAttempts) {
-          setTimeout(checkOnce, 1000)
-        } else {
-          stopped = true
-          setScanning(false)
-          setScanStatus(null)
-        }
-      }
-    }
-
-    // Start the first check
-    checkOnce()
-  }
-
-  const pollScanStatus = async (id: string) => {
-    console.log(`🔄 Starting to poll scan status for ID: ${id}`)
-    let pollCount = 0
-    const startTime = Date.now()
-    const maxDuration = 600000 // 10 minutes
-    let stopped = false
-
-    const pollOnce = async () => {
-      if (stopped) return
-
-      // Check if we've exceeded max duration
-      if (Date.now() - startTime > maxDuration) {
-        console.log('⏱️ 10 minute timeout reached, stopping poll')
-        stopped = true
-        setScanning(false)
-        return
-      }
-
-      pollCount++
-      const timestamp = new Date().toLocaleTimeString()
-
-      try {
-        console.log(`[${timestamp}] 📡 Poll #${pollCount}: Fetching status from ${API_URL}/api/v1/scanner/scan/${id}/status`)
-
-        const response = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/status`)
-
-        console.log(`[${timestamp}] 📡 Poll #${pollCount}: Response status: ${response.status}`)
-
-        if (!response.ok) {
-          console.error(`[${timestamp}] ❌ Poll #${pollCount}: HTTP error! status: ${response.status}`)
-          // Continue polling even on error
-          setTimeout(pollOnce, 1000)
-          return
-        }
-
-        const status = await response.json()
-
-        console.log(`[${timestamp}] 📊 Poll #${pollCount}: RAW API Response:`, JSON.stringify(status, null, 2))
-        console.log(`[${timestamp}] 📊 Poll #${pollCount}: Parsed status:`, {
-          scan_id: status.scan_id,
-          status: status.status,
-          progress: status.progress,
-          message: status.message,
-          files_scanned: status.files_scanned,
-          total_files: status.total_files,
-          nodes_found: status.nodes_found,
-          eta: status.eta
-        })
-
-        // Update state
-        console.log(`[${timestamp}] ⚡ Poll #${pollCount}: Calling setScanStatus with new data...`)
-        setScanStatus(status)
-        console.log(`[${timestamp}] ✓ Poll #${pollCount}: setScanStatus called successfully`)
-
-        if (status.status === 'completed') {
-          console.log(`[${timestamp}] ✅ Poll #${pollCount}: Scan completed! Stopping poll and loading results.`)
-          stopped = true
-          setScanning(false)
-
-          // Clear active scan from localStorage
-          localStorage.removeItem('activeScanId')
-
-          loadScanResults(id)
-        } else if (status.status === 'failed') {
-          console.error(`[${timestamp}] ❌ Poll #${pollCount}: Scan failed! Message: ${status.message}`)
-          stopped = true
-          setScanning(false)
-
-          // Clear active scan from localStorage
-          localStorage.removeItem('activeScanId')
-        } else {
-          console.log(`[${timestamp}] ⏳ Poll #${pollCount}: Scan still in progress... (${status.status})`)
-          // Schedule next poll
-          setTimeout(pollOnce, 1000)
-        }
-      } catch (error) {
-        console.error(`[${timestamp}] ❌ Poll #${pollCount}: Error during polling:`, error)
-        console.error(`[${timestamp}] ❌ Error details:`, {
-          name: error instanceof Error ? error.name : 'Unknown',
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        })
-        // Continue polling even on error
-        setTimeout(pollOnce, 1000)
-      }
-    }
-
-    // Start the first poll
-    pollOnce()
-  }
-
   const loadScanResults = async (id: string) => {
     try {
+      console.log(`📊 Loading scan results for: ${id}`)
+
       // Load results
       const resultsResponse = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/results`)
+      if (!resultsResponse.ok) {
+        throw new Error(`Failed to load results: ${resultsResponse.statusText}`)
+      }
       const results = await resultsResponse.json()
       setScanResults(results)
+      console.log('✅ Results loaded:', results)
 
       // Load diagram
       const diagramResponse = await fetch(`${API_URL}/api/v1/scanner/scan/${id}/diagram?format=mermaid`)
-      const diagramData = await diagramResponse.json()
-      setDiagram(diagramData.diagram)
+      if (diagramResponse.ok) {
+        const diagramData = await diagramResponse.json()
+        setDiagram(diagramData.diagram)
+        console.log('✅ Diagram loaded')
+      }
     } catch (error) {
       console.error('Failed to load scan results:', error)
+      alert(`Failed to load results: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
+
+  // WebSocket hook for real-time scan updates
+  useScanWebSocket({
+    url: WS_URL,
+    scanId: scanId || '',
+    enabled: !!scanId && scanning,
+    onUpdate: (update) => {
+      console.log('📊 WebSocket update received:', update)
+
+      // Update scan status
+      setScanStatus({
+        scan_id: update.scan_id,
+        status: update.status || 'unknown',
+        progress: update.progress || 0,
+        message: update.message || '',
+        files_scanned: update.files_scanned || 0,
+        nodes_found: update.nodes_found || 0,
+        eta: update.eta,
+        total_files: update.total_files,
+      })
+
+      // Handle completion
+      if (update.status === 'completed') {
+        console.log('✅ Scan completed!')
+        setScanning(false)
+        loadScanResults(update.scan_id)
+      } else if (update.status === 'failed') {
+        console.error('❌ Scan failed:', update.message)
+        setScanning(false)
+        alert(`Scan failed: ${update.message}`)
+      }
+    },
+    onConnectionChange: (status) => {
+      console.log('🔌 WebSocket connection status:', status)
+      setWsConnectionStatus(status)
+    },
+  })
 
   const handleLogout = () => {
     localStorage.removeItem('user')
@@ -621,6 +451,27 @@ export default function ScannerPage() {
 
           {/* Results Panel */}
           <div className="lg:col-span-2">
+            {/* WebSocket Connection Status */}
+            {scanning && (
+              <div className="mb-4 flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    wsConnectionStatus === 'connected' ? 'bg-green-500 animate-pulse' :
+                    wsConnectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                    wsConnectionStatus === 'error' ? 'bg-red-500' :
+                    'bg-gray-400'
+                  }`} />
+                  <span className="text-sm text-gray-600">
+                    {wsConnectionStatus === 'connected' && '🔗 Live updates active'}
+                    {wsConnectionStatus === 'connecting' && '⏳ Connecting to live updates...'}
+                    {wsConnectionStatus === 'error' && '❌ Connection error'}
+                    {wsConnectionStatus === 'disconnected' && '🔌 Disconnected'}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400">WebSocket</span>
+              </div>
+            )}
+
             {/* Scan Progress */}
             {scanning && scanStatus && (
               <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -633,6 +484,7 @@ export default function ScannerPage() {
                         {scanStatus.status === 'discovering' && 'Discovering Files...'}
                         {scanStatus.status === 'scanning' && 'Scanning Your Code...'}
                         {scanStatus.status === 'queued' && 'Queued...'}
+                        {scanStatus.status === 'starting' && 'Starting...'}
                       </h2>
                       <p className="text-sm text-gray-500">{scanStatus.message}</p>
                     </div>
@@ -871,7 +723,7 @@ export default function ScannerPage() {
                       <div className="space-y-2">
                         {endpoints.map(endpoint => {
                           const endpointNodes = apiNodes.filter(n => n.endpoint === endpoint)
-                          const methods = [...new Set(endpointNodes.map(n => n.http_method || n.method).filter(Boolean))]
+                          const methods = [...new Set(endpointNodes.map(n => n.http_method).filter(Boolean))]
                           return (
                             <div key={endpoint} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                               <div className="flex items-center space-x-3">
