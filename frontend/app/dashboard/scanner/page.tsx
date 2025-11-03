@@ -476,77 +476,335 @@ export default function ScannerPage() {
             )}
 
             {/* Scan Results */}
-            {scanResults && (
-              <div className="space-y-6">
-                {/* Summary */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4">Scan Results</h2>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-4 bg-purple-50 rounded-lg">
-                      <div className="text-3xl font-bold text-purple-600">{scanResults.files_scanned}</div>
-                      <div className="text-sm text-gray-600">Files Scanned</div>
-                    </div>
-                    <div className="text-center p-4 bg-blue-50 rounded-lg">
-                      <div className="text-3xl font-bold text-blue-600">{scanResults.graph.nodes.length}</div>
-                      <div className="text-sm text-gray-600">Workflow Nodes</div>
-                    </div>
-                    <div className="text-center p-4 bg-pink-50 rounded-lg">
-                      <div className="text-3xl font-bold text-pink-600">{scanResults.graph.edges.length}</div>
-                      <div className="text-sm text-gray-600">Connections</div>
-                    </div>
-                  </div>
-                </div>
+            {scanResults && (() => {
+              // Calculate metrics
+              const nodes = scanResults.graph.nodes
+              const edges = scanResults.graph.edges
 
-                {/* Diagram */}
-                {diagram && (
+              const nodesByType = nodes.reduce((acc: any, node) => {
+                acc[node.type] = (acc[node.type] || 0) + 1
+                return acc
+              }, {})
+
+              const dbNodes = nodes.filter(n => n.type.includes('database'))
+              const apiNodes = nodes.filter(n => n.type.includes('api'))
+              const fileNodes = nodes.filter(n => n.type.includes('file'))
+              const uiNodes = nodes.filter(n => n.type.includes('ui') || n.name.includes('Click') || n.name.includes('Button'))
+
+              // Extract unique database tables
+              const tables = [...new Set(dbNodes.filter(n => n.table_name).map(n => n.table_name))]
+              const tableOperations = tables.map(table => {
+                const tableNodes = dbNodes.filter(n => n.table_name === table)
+                const reads = tableNodes.filter(n => n.type.includes('read')).length
+                const writes = tableNodes.filter(n => n.type.includes('write')).length
+                const files = [...new Set(tableNodes.map(n => n.location.file_path))]
+                return { table, reads, writes, files, nodes: tableNodes }
+              })
+
+              // Extract unique API endpoints
+              const endpoints = [...new Set(apiNodes.filter(n => n.endpoint).map(n => n.endpoint))]
+
+              return (
+                <div className="space-y-6">
+                  {/* Metrics Dashboard */}
                   <div className="bg-white rounded-lg shadow p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-4">Workflow Diagram</h2>
-                    <div className="bg-gray-50 p-4 rounded-lg overflow-auto">
-                      <pre className="text-sm text-gray-700">{diagram}</pre>
+                    <div className="flex items-center space-x-2 mb-4">
+                      <span className="text-2xl">📊</span>
+                      <h2 className="text-xl font-bold text-gray-900">Metrics & Analytics</h2>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Copy this Mermaid diagram and paste it into{' '}
-                      <a href="https://mermaid.live" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline">
-                        mermaid.live
-                      </a>{' '}
-                      or GitHub to visualize
-                    </p>
-                  </div>
-                )}
 
-                {/* Nodes List */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4">Detected Workflows</h2>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {scanResults.graph.nodes.map((node) => (
-                      <div
-                        key={node.id}
-                        className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
-                              node.type.includes('database') ? 'bg-green-100 text-green-800' :
-                              node.type.includes('api') ? 'bg-blue-100 text-blue-800' :
-                              'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {node.type.toUpperCase()}
+                    {/* Key Metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                      <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg">
+                        <div className="text-3xl font-bold text-purple-600">{scanResults.files_scanned}</div>
+                        <div className="text-sm text-gray-600">Files Scanned</div>
+                      </div>
+                      <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
+                        <div className="text-3xl font-bold text-blue-600">{nodes.length}</div>
+                        <div className="text-sm text-gray-600">Total Nodes</div>
+                      </div>
+                      <div className="text-center p-4 bg-gradient-to-br from-pink-50 to-pink-100 rounded-lg">
+                        <div className="text-3xl font-bold text-pink-600">{edges.length}</div>
+                        <div className="text-sm text-gray-600">Connections</div>
+                      </div>
+                      <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg">
+                        <div className="text-3xl font-bold text-green-600">{(scanResults.scan_duration || 0).toFixed(1)}s</div>
+                        <div className="text-sm text-gray-600">Scan Duration</div>
+                      </div>
+                    </div>
+
+                    {/* Workflow Type Breakdown */}
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Workflow Type Breakdown</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {Object.entries(nodesByType).map(([type, count]) => (
+                          <div key={type} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <span className="text-sm font-medium text-gray-700 capitalize">
+                              {type.replace(/_/g, ' ')}
                             </span>
-                            <span className="ml-2 font-medium text-gray-900">{node.name}</span>
+                            <span className="text-lg font-bold text-gray-900">{count as number}</span>
                           </div>
-                          <span className="text-xs text-gray-500">
-                            {node.location.file_path}:{node.location.line_number}
-                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Quick Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-3 border-l-4 border-green-500 bg-green-50 rounded">
+                        <div className="text-2xl font-bold text-green-600">{dbNodes.length}</div>
+                        <div className="text-xs text-gray-600">Database Operations</div>
+                      </div>
+                      <div className="p-3 border-l-4 border-blue-500 bg-blue-50 rounded">
+                        <div className="text-2xl font-bold text-blue-600">{apiNodes.length}</div>
+                        <div className="text-xs text-gray-600">API Calls</div>
+                      </div>
+                      <div className="p-3 border-l-4 border-purple-500 bg-purple-50 rounded">
+                        <div className="text-2xl font-bold text-purple-600">{fileNodes.length}</div>
+                        <div className="text-xs text-gray-600">File Operations</div>
+                      </div>
+                      <div className="p-3 border-l-4 border-pink-500 bg-pink-50 rounded">
+                        <div className="text-2xl font-bold text-pink-600">{tables.length}</div>
+                        <div className="text-xs text-gray-600">Unique Tables</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Database Tables */}
+                  {tables.length > 0 && (
+                    <div className="bg-white rounded-lg shadow p-6">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span className="text-2xl">🗄️</span>
+                        <h2 className="text-xl font-bold text-gray-900">Database Tables</h2>
+                      </div>
+                      <div className="space-y-3">
+                        {tableOperations.map(({ table, reads, writes, files, nodes: tableNodes }) => (
+                          <div key={table} className="border border-gray-200 rounded-lg p-4 hover:border-purple-300 transition-colors">
+                            <div className="flex items-center justify-between mb-2">
+                              <h3 className="text-lg font-bold text-gray-900">{table}</h3>
+                              <div className="flex items-center space-x-3">
+                                <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
+                                  📖 {reads} reads
+                                </span>
+                                <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-sm font-semibold">
+                                  ✏️ {writes} writes
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-sm text-gray-600 mb-2">
+                              <strong>Used in {files.length} file{files.length !== 1 ? 's' : ''}:</strong>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {files.map(file => (
+                                <span key={file} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
+                                  {file.split('/').pop()}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Database Relationship Diagram */}
+                  {tables.length > 0 && (
+                    <div className="bg-white rounded-lg shadow p-6">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span className="text-2xl">🔗</span>
+                        <h2 className="text-xl font-bold text-gray-900">Database Relationship Diagram</h2>
+                      </div>
+                      <div className="bg-gray-50 p-6 rounded-lg">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {tableOperations.map(({ table, reads, writes }) => (
+                            <div key={table} className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                              <div className="text-center border-b border-gray-200 pb-2 mb-2">
+                                <h4 className="font-bold text-gray-900">{table}</h4>
+                              </div>
+                              <div className="space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Read Operations:</span>
+                                  <span className="font-semibold text-green-600">{reads}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Write Operations:</span>
+                                  <span className="font-semibold text-orange-600">{writes}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Total Operations:</span>
+                                  <span className="font-semibold text-purple-600">{reads + writes}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        {node.description && (
-                          <p className="text-sm text-gray-600 mt-1">{node.description}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* API Endpoints */}
+                  {endpoints.length > 0 && (
+                    <div className="bg-white rounded-lg shadow p-6">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span className="text-2xl">🌐</span>
+                        <h2 className="text-xl font-bold text-gray-900">API Endpoints</h2>
+                      </div>
+                      <div className="space-y-2">
+                        {endpoints.map(endpoint => {
+                          const endpointNodes = apiNodes.filter(n => n.endpoint === endpoint)
+                          const methods = [...new Set(endpointNodes.map(n => n.http_method || n.method).filter(Boolean))]
+                          return (
+                            <div key={endpoint} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                              <div className="flex items-center space-x-3">
+                                {methods.map(method => (
+                                  <span key={method} className={`px-2 py-1 rounded text-xs font-bold ${
+                                    method === 'GET' ? 'bg-green-500 text-white' :
+                                    method === 'POST' ? 'bg-blue-500 text-white' :
+                                    method === 'PUT' ? 'bg-yellow-500 text-white' :
+                                    method === 'DELETE' ? 'bg-red-500 text-white' :
+                                    'bg-gray-500 text-white'
+                                  }`}>
+                                    {method}
+                                  </span>
+                                ))}
+                                <code className="text-sm font-mono text-gray-900">{endpoint}</code>
+                              </div>
+                              <span className="text-sm text-gray-500">{endpointNodes.length} call{endpointNodes.length !== 1 ? 's' : ''}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Data Workflow Visualization */}
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center space-x-2 mb-4">
+                      <span className="text-2xl">📈</span>
+                      <h2 className="text-xl font-bold text-gray-900">Data Workflow Visualization</h2>
+                    </div>
+                    <div className="bg-gradient-to-r from-purple-50 via-blue-50 to-green-50 p-8 rounded-lg">
+                      <div className="flex items-center justify-around">
+                        <div className="text-center">
+                          <div className="w-24 h-24 bg-purple-500 rounded-full flex items-center justify-center text-white text-3xl mb-2 shadow-lg">
+                            🖥️
+                          </div>
+                          <div className="font-bold text-gray-900">UI Layer</div>
+                          <div className="text-sm text-gray-600">{uiNodes.length} interactions</div>
+                        </div>
+                        <div className="text-4xl text-gray-400">→</div>
+                        <div className="text-center">
+                          <div className="w-24 h-24 bg-blue-500 rounded-full flex items-center justify-center text-white text-3xl mb-2 shadow-lg">
+                            🌐
+                          </div>
+                          <div className="font-bold text-gray-900">API Layer</div>
+                          <div className="text-sm text-gray-600">{apiNodes.length} endpoints</div>
+                        </div>
+                        <div className="text-4xl text-gray-400">→</div>
+                        <div className="text-center">
+                          <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center text-white text-3xl mb-2 shadow-lg">
+                            🗄️
+                          </div>
+                          <div className="font-bold text-gray-900">Data Layer</div>
+                          <div className="text-sm text-gray-600">{dbNodes.length} operations</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* UI Workflow Visualization */}
+                  {uiNodes.length > 0 && (
+                    <div className="bg-white rounded-lg shadow p-6">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span className="text-2xl">🎨</span>
+                        <h2 className="text-xl font-bold text-gray-900">UI Workflow Visualization</h2>
+                      </div>
+                      <div className="space-y-3">
+                        {uiNodes.slice(0, 10).map(node => (
+                          <div key={node.id} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-bold text-purple-900">{node.name}</span>
+                                <p className="text-sm text-gray-600">{node.description}</p>
+                              </div>
+                              <span className="text-xs text-gray-500 whitespace-nowrap ml-4">
+                                {node.location.file_path.split('/').pop()}:{node.location.line_number}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                        {uiNodes.length > 10 && (
+                          <div className="text-center text-sm text-gray-500">
+                            + {uiNodes.length - 10} more UI interactions
+                          </div>
                         )}
                       </div>
-                    ))}
+                    </div>
+                  )}
+
+                  {/* Full Workflow Diagram */}
+                  {diagram && (
+                    <div className="bg-white rounded-lg shadow p-6">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <span className="text-2xl">🗺️</span>
+                        <h2 className="text-xl font-bold text-gray-900">Complete Workflow Diagram</h2>
+                      </div>
+                      <div className="bg-gray-50 p-4 rounded-lg overflow-auto">
+                        <pre className="text-sm text-gray-700">{diagram}</pre>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Copy this Mermaid diagram and paste it into{' '}
+                        <a href="https://mermaid.live" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline">
+                          mermaid.live
+                        </a>{' '}
+                        to visualize the complete workflow
+                      </p>
+                    </div>
+                  )}
+
+                  {/* All Detected Workflows */}
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="flex items-center space-x-2 mb-4">
+                      <span className="text-2xl">📋</span>
+                      <h2 className="text-xl font-bold text-gray-900">All Detected Workflows ({nodes.length})</h2>
+                    </div>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {nodes.map((node) => (
+                        <div
+                          key={node.id}
+                          className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
+                                node.type.includes('database') ? 'bg-green-100 text-green-800' :
+                                node.type.includes('api') ? 'bg-blue-100 text-blue-800' :
+                                node.type.includes('file') ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-purple-100 text-purple-800'
+                              }`}>
+                                {node.type.toUpperCase().replace(/_/g, ' ')}
+                              </span>
+                              <span className="ml-2 font-medium text-gray-900">{node.name}</span>
+                              {node.table_name && (
+                                <span className="ml-2 text-xs text-gray-600">→ {node.table_name}</span>
+                              )}
+                              {node.endpoint && (
+                                <span className="ml-2 text-xs text-gray-600">→ {node.endpoint}</span>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-500 whitespace-nowrap ml-4">
+                              {node.location.file_path}:{node.location.line_number}
+                            </span>
+                          </div>
+                          {node.description && (
+                            <p className="text-sm text-gray-600 mt-1">{node.description}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Empty State */}
             {!scanning && !scanResults && (
