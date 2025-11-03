@@ -77,6 +77,7 @@ export default function DashboardPage() {
 
     const baseLinks = [
       { href: '/dashboard', label: 'Dashboard', active: true },
+      { href: '/dashboard/scanner', label: 'Scanner' },
       { href: '/dashboard/repositories', label: 'Repositories' },
       { href: '/dashboard/scans', label: 'Scans' },
     ]
