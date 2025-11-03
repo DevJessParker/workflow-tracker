@@ -215,7 +215,29 @@ export default function ScannerPage() {
         clearTimeout(timeoutId)
         if (fetchError.name === 'AbortError') {
           console.error('❌ FETCH ABORTED: Request timed out after 10 seconds')
-          throw new Error('Request timed out - backend took too long to respond')
+          console.log('🔄 POST timed out, checking for active scans as fallback...')
+
+          // Fallback: Check for active scans
+          try {
+            const activeResponse = await fetch(`${API_URL}/api/v1/scanner/scans/active`)
+            const activeData = await activeResponse.json()
+            console.log('📊 Active scans found:', activeData)
+
+            if (activeData.active_scans && activeData.active_scans.length > 0) {
+              const latestScan = activeData.active_scans[activeData.active_scans.length - 1]
+              console.log(`✅ Found active scan! ID: ${latestScan.scan_id}`)
+              console.log('🔄 Starting to poll active scan...')
+              setScanId(latestScan.scan_id)
+              pollScanStatus(latestScan.scan_id)
+              return // Success! Exit without throwing error
+            } else {
+              console.error('❌ No active scans found')
+              throw new Error('Request timed out and no active scans found')
+            }
+          } catch (fallbackError) {
+            console.error('❌ Fallback also failed:', fallbackError)
+            throw new Error('Request timed out - please try again')
+          }
         }
         throw fetchError
       }
