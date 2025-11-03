@@ -14,8 +14,8 @@ import sys
 # Add scanner to path
 sys.path.insert(0, '/scanner')
 
-from scanner.graph.builder import WorkflowGraphBuilder
-from scanner.graph.renderer import WorkflowRenderer
+from graph.builder import WorkflowGraphBuilder
+from graph.renderer import WorkflowRenderer
 
 router = APIRouter(prefix="/api/v1/scanner", tags=["scanner"])
 
