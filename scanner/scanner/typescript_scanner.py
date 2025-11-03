@@ -3,7 +3,7 @@
 import re
 from typing import List
 from .base import BaseScanner
-from scanner.models import (
+from models import (
     WorkflowGraph, WorkflowNode, WorkflowType, CodeLocation
 )
 

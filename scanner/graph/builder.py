@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from typing import List, Dict, Any
 
-from scanner.models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
-from scanner.scanner import CSharpScanner, TypeScriptScanner, ReactScanner, AngularScanner, WPFScanner
+from models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
+from scanner import CSharpScanner, TypeScriptScanner, ReactScanner, AngularScanner, WPFScanner
 
 
 class WorkflowGraphBuilder:

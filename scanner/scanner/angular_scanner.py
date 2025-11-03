@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 from .base import BaseScanner
-from scanner.models import (
+from models import (
     WorkflowGraph, WorkflowNode, WorkflowEdge, WorkflowType, CodeLocation
 )
 
