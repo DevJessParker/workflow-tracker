@@ -194,6 +194,8 @@ def main():
         st.session_state.stop_scan = False
     if 'scan_triggered' not in st.session_state:
         st.session_state.scan_triggered = False
+    if 'tabs_shown' not in st.session_state:
+        st.session_state.tabs_shown = False
 
     # Check if scan results exist (determines which tabs to show)
     has_results = st.session_state.scan_result is not None
@@ -288,6 +290,7 @@ def render_scan_tab():
             st.session_state.scan_running = True
             st.session_state.scan_triggered = True  # Flag that scan should start
             st.session_state.stop_scan = False
+            st.session_state.tabs_shown = False  # Reset for new scan
             st.rerun()
 
         # Progress section and scan execution (only when scan_triggered is True)
@@ -1165,13 +1168,14 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Show instruction to navigate to tabs
-        st.info("📊 Navigate to the **Visualizations** tab above to view the workflow diagrams!")
-
-        # Reset scan state - NO RERUN NEEDED
-        # The tabs are already showing based on has_results = scan_result is not None
+        # Reset scan state
         st.session_state.scan_running = False
         st.session_state.scan_triggered = False
+
+        # Rerun ONCE to show the tabs (only if we haven't shown them yet for this scan)
+        if not st.session_state.tabs_shown:
+            st.session_state.tabs_shown = True
+            st.rerun()
 
     except KeyboardInterrupt as e:
         # Graceful stop requested by user
