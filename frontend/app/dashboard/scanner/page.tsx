@@ -187,21 +187,28 @@ export default function ScannerPage() {
       )
 
       try {
+        console.log('⏳ Waiting for POST response (max 10 seconds)...')
         const response = await Promise.race([postPromise, timeoutPromise]) as Response
+
+        console.log('📥 POST response received! Status:', response.status)
+
         const data = await response.json()
 
-        console.log('✅ POST response received:', data)
+        console.log('✅ POST response data:', JSON.stringify(data, null, 2))
 
         if (data.scan_id) {
           console.log('🎯 Got scan_id from POST:', data.scan_id)
+          console.log('🔄 Starting direct scan status polling...')
           setScanId(data.scan_id)
           pollScanStatus(data.scan_id)
         } else {
-          console.log('⚠️ POST succeeded but no scan_id, falling back to polling for active scans')
+          console.log('⚠️ POST succeeded but no scan_id in response, falling back to polling for active scans')
+          console.log('⚠️ Response keys:', Object.keys(data))
           pollForActiveScan()
         }
       } catch (error) {
-        console.log('⏱️ POST timed out or failed, falling back to polling for active scans:', error)
+        console.log('⏱️ POST timed out or failed:', error instanceof Error ? error.message : String(error))
+        console.log('🔄 Falling back to polling for active scans...')
         pollForActiveScan()
       }
 

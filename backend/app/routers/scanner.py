@@ -116,9 +116,14 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
 async def get_scan_status(scan_id: str):
     """Get the status of a running scan"""
     if scan_id not in SCAN_STATUS:
+        print(f"❌ Scan {scan_id} not found in SCAN_STATUS")
+        print(f"❌ Available scan IDs: {list(SCAN_STATUS.keys())}")
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    return SCAN_STATUS[scan_id]
+    status = SCAN_STATUS[scan_id]
+    print(f"[{scan_id}] 📊 Status request: {status['status']} - {status['progress']:.1f}% - {status['message']}")
+
+    return status
 
 
 @router.get("/scans/active")
@@ -297,6 +302,10 @@ async def run_scan(scan_id: str, request: ScanRequest):
         # Update to discovering status
         SCAN_STATUS[scan_id]["status"] = "discovering"
         SCAN_STATUS[scan_id]["message"] = "Discovering files..."
+        SCAN_STATUS[scan_id]["progress"] = 0.0
+
+        print(f"[{scan_id}] 📊 Status set to 'discovering' - frontend can now see this")
+        print(f"[{scan_id}] 📊 Current SCAN_STATUS: {SCAN_STATUS[scan_id]}")
 
         result = builder.build(request.repo_path, progress_callback=update_progress)
 
