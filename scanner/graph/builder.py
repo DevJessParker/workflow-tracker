@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from ..models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
-from ..scanner import CSharpScanner, TypeScriptScanner
+from ..scanner import CSharpScanner, TypeScriptScanner, ReactScanner
 
 
 class WorkflowGraphBuilder:
@@ -28,6 +28,7 @@ class WorkflowGraphBuilder:
         scanners = [
             CSharpScanner(scanner_config),
             TypeScriptScanner(scanner_config),
+            ReactScanner(scanner_config),  # UI workflow detection
         ]
 
         return scanners
