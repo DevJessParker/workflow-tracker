@@ -79,35 +79,53 @@ class APIRoutesAnalyzer:
         self.repository_path = repository_path
         self.routes: Dict[str, APIRouteAnalysis] = {}
 
-    def analyze(self) -> Dict[str, APIRouteAnalysis]:
-        """Perform complete API routes analysis"""
+    def analyze(self, progress_callback=None) -> Dict[str, APIRouteAnalysis]:
+        """Perform complete API routes analysis
+
+        Args:
+            progress_callback: Optional callback function(step, total_steps, message) for progress updates
+        """
         print("\n" + "="*60)
         print("ANALYZING API ROUTES")
         print("="*60)
 
+        total_steps = 6
+
         # Step 1: Extract routes from workflow graph
         self._extract_routes_from_graph()
         print(f"✓ Found {len(self.routes)} API routes from graph")
+        if progress_callback:
+            progress_callback(1, total_steps, f"Found {len(self.routes)} API routes from graph")
 
         # Step 2: Find route definition files
         self._find_route_files()
         print(f"✓ Located route definition files")
+        if progress_callback:
+            progress_callback(2, total_steps, "Located route definition files")
 
         # Step 3: Parse route files to extract details
         self._parse_route_definitions()
         print(f"✓ Parsed route definitions")
+        if progress_callback:
+            progress_callback(3, total_steps, "Parsed route definitions")
 
         # Step 4: Find and parse middleware
         self._find_middleware()
         print(f"✓ Found middleware configurations")
+        if progress_callback:
+            progress_callback(4, total_steps, "Found middleware configurations")
 
         # Step 5: Extract payload schemas
         self._extract_payload_schemas()
         print(f"✓ Extracted payload schemas")
+        if progress_callback:
+            progress_callback(5, total_steps, "Extracted payload schemas")
 
         # Step 6: Calculate metrics
         self._calculate_metrics()
         print(f"✓ Calculated route metrics")
+        if progress_callback:
+            progress_callback(6, total_steps, "Calculated route metrics")
 
         print(f"✓ Analyzed {len(self.routes)} API routes")
         print("="*60 + "\n")

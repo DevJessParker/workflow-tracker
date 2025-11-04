@@ -105,30 +105,46 @@ class ComponentPageAnalyzer:
         self.components: Dict[str, ComponentAnalysis] = {}
         self.pages: Dict[str, PageAnalysis] = {}
 
-    def analyze(self) -> tuple[Dict[str, ComponentAnalysis], Dict[str, PageAnalysis]]:
-        """Run the complete analysis"""
+    def analyze(self, progress_callback=None) -> tuple[Dict[str, ComponentAnalysis], Dict[str, PageAnalysis]]:
+        """Run the complete analysis
+
+        Args:
+            progress_callback: Optional callback function(step, total_steps, message) for progress updates
+        """
         print("🔍 Analyzing components and pages...")
 
-        # Find all component and page files
+        total_steps = 5
+
+        # Step 1: Find all component and page files
         component_files = self._find_component_files()
         page_files = self._find_page_files()
 
         print(f"Found {len(component_files)} component files")
         print(f"Found {len(page_files)} page files")
+        if progress_callback:
+            progress_callback(1, total_steps, f"Found {len(component_files)} components, {len(page_files)} pages")
 
-        # Analyze components
+        # Step 2: Analyze components
         for file_path in component_files:
             self._analyze_component_file(file_path)
+        if progress_callback:
+            progress_callback(2, total_steps, f"Analyzed {len(component_files)} components")
 
-        # Analyze pages
+        # Step 3: Analyze pages
         for file_path in page_files:
             self._analyze_page_file(file_path)
+        if progress_callback:
+            progress_callback(3, total_steps, f"Analyzed {len(page_files)} pages")
 
-        # Build usage relationships
+        # Step 4: Build usage relationships
         self._build_usage_relationships()
+        if progress_callback:
+            progress_callback(4, total_steps, "Built usage relationships")
 
-        # Enhance with workflow graph data
+        # Step 5: Enhance with workflow graph data
         self._enhance_with_graph_data()
+        if progress_callback:
+            progress_callback(5, total_steps, "Enhanced with workflow data")
 
         return self.components, self.pages
 

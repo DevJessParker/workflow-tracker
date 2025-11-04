@@ -289,7 +289,16 @@ async def run_scan(scan_id: str, request: ScanRequest):
         print(f"[{scan_id}] 🌐 Analyzing API routes...")
         await update_analysis_step(3, "in_progress", 0)
         api_analyzer = APIRoutesAnalyzer(result.graph, request.repo_path)
-        api_routes = api_analyzer.analyze()
+
+        # Progress callback for API routes analysis sub-steps
+        def api_progress(step, total_steps, message):
+            progress_pct = int((step / total_steps) * 100)
+            asyncio.run_coroutine_threadsafe(
+                update_analysis_step(3, "in_progress", progress_pct),
+                loop
+            )
+
+        api_routes = api_analyzer.analyze(progress_callback=api_progress)
         api_routes_dict = api_analyzer.to_dict()
         await update_analysis_step(3, "completed", 100)
 
@@ -297,7 +306,16 @@ async def run_scan(scan_id: str, request: ScanRequest):
         print(f"[{scan_id}] 🧩 Analyzing components and pages...")
         await update_analysis_step(4, "in_progress", 0)
         component_analyzer = ComponentPageAnalyzer(result.graph, request.repo_path)
-        components, pages = component_analyzer.analyze()
+
+        # Progress callback for components/pages analysis sub-steps
+        def component_progress(step, total_steps, message):
+            progress_pct = int((step / total_steps) * 100)
+            asyncio.run_coroutine_threadsafe(
+                update_analysis_step(4, "in_progress", progress_pct),
+                loop
+            )
+
+        components, pages = component_analyzer.analyze(progress_callback=component_progress)
         components_pages_dict = component_analyzer.to_dict()
         await update_analysis_step(4, "completed", 100)
 
@@ -305,7 +323,16 @@ async def run_scan(scan_id: str, request: ScanRequest):
         print(f"[{scan_id}] 📦 Analyzing dependencies...")
         await update_analysis_step(5, "in_progress", 0)
         dependency_analyzer = DependencyAnalyzer(request.repo_path)
-        dependencies = dependency_analyzer.analyze()
+
+        # Progress callback for dependencies analysis sub-steps
+        def dependency_progress(step, total_steps, message):
+            progress_pct = int((step / total_steps) * 100)
+            asyncio.run_coroutine_threadsafe(
+                update_analysis_step(5, "in_progress", progress_pct),
+                loop
+            )
+
+        dependencies = dependency_analyzer.analyze(progress_callback=dependency_progress)
         dependencies_dict = dependency_analyzer.to_dict()
         await update_analysis_step(5, "completed", 100)
 

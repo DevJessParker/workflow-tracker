@@ -91,21 +91,35 @@ class DependencyAnalyzer:
         self.conflicts: List[DependencyConflict] = []
         self.metrics = DependencyMetrics()
 
-    def analyze(self) -> Dict[str, DependencyInfo]:
-        """Run complete dependency analysis"""
+    def analyze(self, progress_callback=None) -> Dict[str, DependencyInfo]:
+        """Run complete dependency analysis
+
+        Args:
+            progress_callback: Optional callback function(step, total_steps, message) for progress updates
+        """
         print("📦 Analyzing dependencies...")
 
-        # Find and parse all package files
+        total_steps = 4
+
+        # Step 1: Find and parse all package files
         self._find_and_parse_package_files()
+        if progress_callback:
+            progress_callback(1, total_steps, f"Parsed {len(self.dependencies)} dependencies")
 
-        # Check usage in codebase
+        # Step 2: Check usage in codebase
         self._check_dependency_usage()
+        if progress_callback:
+            progress_callback(2, total_steps, "Checked dependency usage in codebase")
 
-        # Detect conflicts and redundancies
+        # Step 3: Detect conflicts and redundancies
         self._detect_conflicts()
+        if progress_callback:
+            progress_callback(3, total_steps, "Detected conflicts and redundancies")
 
-        # Calculate metrics
+        # Step 4: Calculate metrics
         self._calculate_metrics()
+        if progress_callback:
+            progress_callback(4, total_steps, "Calculated dependency metrics")
 
         print(f"Found {len(self.dependencies)} dependencies")
         print(f"Outdated: {self.metrics.outdated_count}, Unused: {self.metrics.unused_count}, Conflicts: {self.metrics.conflict_count}")
