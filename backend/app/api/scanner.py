@@ -207,11 +207,20 @@ async def run_scan(scan_id: str, request: ScanRequest):
             total_files_estimate = total
             progress_pct = (current / total) * 100 if total > 0 else 0
 
+            # Parse actual node count from message (format: "Nodes: 1,915 |")
+            actual_nodes = 0
+            if "Nodes: " in message:
+                try:
+                    nodes_str = message.split("Nodes: ")[1].split(" |")[0].replace(",", "")
+                    actual_nodes = int(nodes_str)
+                except (IndexError, ValueError):
+                    actual_nodes = current * 3  # Fallback to estimate
+
             # Schedule coroutine from thread to main event loop
             asyncio.run_coroutine_threadsafe(
                 publish_progress(
                     redis, scan_id, "scanning", progress_pct,
-                    message, current, current * 3,  # Rough estimate of nodes
+                    message, current, actual_nodes,  # Use actual node count from scanner
                     total  # Total files discovered
                 ),
                 loop
