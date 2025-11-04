@@ -207,11 +207,33 @@ async def websocket_scan_progress(websocket: WebSocket, scan_id: str):
     redis = await get_redis()
 
     try:
-        # Send current status immediately
+        # Send connection confirmation
+        connected_msg = {
+            "type": "connected",
+            "scan_id": scan_id,
+            "message": "Connected to scan progress stream"
+        }
+        await websocket.send_text(json.dumps(connected_msg))
+        print(f"[{scan_id}] 📤 Sent connection confirmation")
+
+        # Send current status immediately if available
         current_status = await redis.get(f"scan:status:{scan_id}")
         if current_status:
-            await websocket.send_text(current_status)
-            print(f"[{scan_id}] 📤 Sent current status")
+            status_data = json.loads(current_status)
+            update_msg = {
+                "type": "scan_update",
+                "scan_id": status_data.get("scan_id"),
+                "status": status_data.get("status"),
+                "progress": status_data.get("progress"),
+                "message": status_data.get("message"),
+                "files_scanned": status_data.get("files_scanned"),
+                "total_files": status_data.get("total_files"),
+                "nodes_found": status_data.get("nodes_found"),
+                "eta": status_data.get("eta"),
+                "timestamp": "now"
+            }
+            await websocket.send_text(json.dumps(update_msg))
+            print(f"[{scan_id}] 📤 Sent current status: {status_data.get('status')}")
 
         # Subscribe to progress updates
         pubsub = redis.pubsub()
@@ -222,11 +244,26 @@ async def websocket_scan_progress(websocket: WebSocket, scan_id: str):
         # Listen for updates
         async for message in pubsub.listen():
             if message["type"] == "message":
-                await websocket.send_text(message["data"])
-                print(f"[{scan_id}] 📤 Sent progress update")
+                data = json.loads(message["data"])
+
+                # Wrap the progress data with type field
+                update_msg = {
+                    "type": "scan_update",
+                    "scan_id": data.get("scan_id"),
+                    "status": data.get("status"),
+                    "progress": data.get("progress"),
+                    "message": data.get("message"),
+                    "files_scanned": data.get("files_scanned"),
+                    "total_files": data.get("total_files"),
+                    "nodes_found": data.get("nodes_found"),
+                    "eta": data.get("eta"),
+                    "timestamp": "now"
+                }
+
+                await websocket.send_text(json.dumps(update_msg))
+                print(f"[{scan_id}] 📤 Sent progress update: {data.get('status')} - {data.get('progress')}%")
 
                 # Check if scan is complete
-                data = json.loads(message["data"])
                 if data["status"] in ["completed", "error", "failed"]:
                     print(f"[{scan_id}] ✅ Scan finished, closing WebSocket")
                     break
