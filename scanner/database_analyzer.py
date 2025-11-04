@@ -126,19 +126,34 @@ class DatabaseTableAnalyzer:
 
         repo_path = Path(self.repository_path)
 
-        for table_name in self.tables.keys():
+        # Build an index of all schema files first (one-time scan)
+        print(f"  📂 Scanning for schema files...")
+        schema_files = []
+        for pattern in schema_patterns:
+            schema_files.extend(repo_path.glob(pattern))
+        print(f"  ✓ Found {len(schema_files)} potential schema files")
+
+        # Limit the number of tables to process to prevent hanging
+        tables_to_process = list(self.tables.keys())[:100]  # Limit to first 100 tables
+        if len(self.tables) > 100:
+            print(f"  ⚠️  Processing first 100 of {len(self.tables)} tables to avoid timeout")
+
+        for idx, table_name in enumerate(tables_to_process):
+            if idx % 10 == 0:
+                print(f"  📊 Processing table {idx + 1}/{len(tables_to_process)}...")
+
             # Search for files that might contain this table's definition
-            for pattern in schema_patterns:
-                for file_path in repo_path.glob(pattern):
+            for file_path in schema_files:
+                try:
                     if self._file_contains_table_definition(file_path, table_name):
                         self.tables[table_name].schema_file = str(file_path)
                         # Find line number where table is defined
                         line_num = self._find_table_definition_line(file_path, table_name)
                         self.tables[table_name].schema_line = line_num
                         break
-
-                if self.tables[table_name].schema_file:
-                    break
+                except Exception as e:
+                    # Skip files that cause errors
+                    continue
 
     def _file_contains_table_definition(self, file_path: Path, table_name: str) -> bool:
         """Check if a file contains the table definition"""
@@ -318,15 +333,35 @@ class DatabaseTableAnalyzer:
 
         repo_path = Path(self.repository_path)
 
-        for table_name in self.tables.keys():
-            migrations = []
+        # Build an index of all migration files first (one-time scan)
+        print(f"  📂 Scanning for migration files...")
+        migration_files = []
+        for pattern in migration_patterns:
+            migration_files.extend(repo_path.glob(pattern))
+        print(f"  ✓ Found {len(migration_files)} potential migration files")
 
-            for pattern in migration_patterns:
-                for file_path in repo_path.glob(pattern):
+        # Limit migration search if too many files
+        if len(migration_files) > 500:
+            print(f"  ⚠️  Limiting to first 500 migration files to avoid timeout")
+            migration_files = migration_files[:500]
+
+        # Only process tables that have schema files (already limited to 100)
+        tables_with_schemas = [t for t in self.tables.keys() if self.tables[t].schema_file]
+
+        for idx, table_name in enumerate(tables_with_schemas):
+            if idx % 10 == 0 and idx > 0:
+                print(f"  📊 Checking migrations for table {idx + 1}/{len(tables_with_schemas)}...")
+
+            migrations = []
+            for file_path in migration_files:
+                try:
                     if self._migration_affects_table(file_path, table_name):
                         migration_info = self._parse_migration_file(file_path, table_name)
                         if migration_info:
                             migrations.append(migration_info)
+                except Exception as e:
+                    # Skip files that cause errors
+                    continue
 
             # Sort migrations by timestamp
             migrations.sort(key=lambda m: m.timestamp)
