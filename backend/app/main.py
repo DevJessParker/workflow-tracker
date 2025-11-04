@@ -106,8 +106,18 @@ async def shutdown_event():
     """Run on application shutdown"""
     print("🛑 Pinata Code Backend shutting down...")
 
-    # Close Redis connection
-    from app.api.scanner import redis_client
-    if redis_client:
-        await redis_client.close()
-        print("📡 Redis: Connection closed")
+    # Close Redis connections
+    from app.redis_client import redis_client, async_redis_client
+    try:
+        if redis_client:
+            redis_client.close()
+            print("📡 Redis (sync): Connection closed")
+    except Exception as e:
+        print(f"⚠️  Error closing sync Redis client: {e}")
+
+    try:
+        if async_redis_client:
+            await async_redis_client.close()
+            print("📡 Redis (async): Connection closed")
+    except Exception as e:
+        print(f"⚠️  Error closing async Redis client: {e}")

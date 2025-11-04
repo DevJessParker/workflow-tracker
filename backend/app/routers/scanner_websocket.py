@@ -11,7 +11,7 @@ import logging
 from typing import Dict, Set
 from datetime import datetime
 
-from app.redis_client import redis_client
+from app.redis_client import async_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +87,13 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
     """
     await manager.connect(websocket, scan_id)
 
-    # Create Redis pubsub client for this connection
-    pubsub = redis_client.pubsub()
+    # Create async Redis pubsub client for this connection
+    pubsub = async_redis_client.pubsub()
     channel = f"scan:{scan_id}"
 
     try:
         # Subscribe to Redis channel for this scan
-        pubsub.subscribe(channel)
+        await pubsub.subscribe(channel)
         logger.info(f"[{scan_id}] 📡 Subscribed to Redis channel: {channel}")
 
         # Send initial connection confirmation
@@ -109,7 +109,8 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
             """Listen for Redis pub/sub messages"""
             while True:
                 try:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    # Use async get_message with timeout
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
 
                     if message and message['type'] == 'message':
                         # Parse the message data
@@ -184,8 +185,8 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
     finally:
         # Clean up
         manager.disconnect(websocket, scan_id)
-        pubsub.unsubscribe(channel)
-        pubsub.close()
+        await pubsub.unsubscribe(channel)
+        await pubsub.close()
         logger.info(f"[{scan_id}] 🧹 Cleaned up WebSocket connection")
 
 

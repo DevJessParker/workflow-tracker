@@ -4,6 +4,7 @@ Handles real-time communication between scan workers and WebSocket clients
 """
 
 import redis
+import redis.asyncio as aioredis
 import json
 import os
 from typing import Any, Dict
@@ -16,7 +17,7 @@ REDIS_HOST = os.getenv('REDIS_HOST', 'pinata-redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_DB = int(os.getenv('REDIS_DB', '0'))
 
-# Create Redis client
+# Create synchronous Redis client (for non-async contexts)
 redis_client = redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
@@ -27,10 +28,21 @@ redis_client = redis.Redis(
     health_check_interval=30
 )
 
+# Create async Redis client (for async contexts like WebSockets)
+async_redis_client = aioredis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB,
+    decode_responses=True,
+    socket_connect_timeout=5,
+    socket_keepalive=True,
+    health_check_interval=30
+)
+
 
 def publish_scan_update(scan_id: str, update_data: Dict[str, Any]) -> bool:
     """
-    Publish scan progress update to Redis channel
+    Publish scan progress update to Redis channel (synchronous)
 
     Args:
         scan_id: Unique scan identifier
@@ -51,6 +63,36 @@ def publish_scan_update(scan_id: str, update_data: Dict[str, Any]) -> bool:
         return True
 
     except redis.RedisError as e:
+        logger.error(f"[{scan_id}] ❌ Redis publish error: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[{scan_id}] ❌ Unexpected error publishing to Redis: {e}")
+        return False
+
+
+async def async_publish_scan_update(scan_id: str, update_data: Dict[str, Any]) -> bool:
+    """
+    Publish scan progress update to Redis channel (async)
+
+    Args:
+        scan_id: Unique scan identifier
+        update_data: Dictionary containing scan status, progress, etc.
+
+    Returns:
+        True if published successfully, False otherwise
+    """
+    try:
+        channel = f"scan:{scan_id}"
+        message = json.dumps(update_data)
+
+        # Publish to Redis channel
+        subscribers = await async_redis_client.publish(channel, message)
+
+        logger.debug(f"[{scan_id}] 📡 Published update to {subscribers} subscriber(s): {update_data.get('progress', 0):.1f}%")
+
+        return True
+
+    except aioredis.RedisError as e:
         logger.error(f"[{scan_id}] ❌ Redis publish error: {e}")
         return False
     except Exception as e:
