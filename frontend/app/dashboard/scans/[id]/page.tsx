@@ -6,6 +6,7 @@ import DashboardNavbar from '@/app/components/DashboardNavbar'
 import PinataSpinner from '@/app/components/PinataSpinner'
 import { useTableBookmarks } from '@/app/hooks/useTableBookmarks'
 import { useApiBookmarks } from '@/app/hooks/useApiBookmarks'
+import { useComponentBookmarks } from '@/app/hooks/useComponentBookmarks'
 
 // Lazy load MermaidDiagram for better performance
 const MermaidDiagram = lazy(() => import('../../../components/MermaidDiagram'))
@@ -66,7 +67,7 @@ interface ScanResults {
   errors: string[]
 }
 
-type TabType = 'overview' | 'workflows' | 'nodes' | 'database' | 'api' | 'tables'
+type TabType = 'overview' | 'workflows' | 'nodes' | 'database' | 'api' | 'tables' | 'components' | 'pages'
 
 interface DatabaseTable {
   table_name: string
@@ -129,6 +130,52 @@ interface APIRoute {
   tags: string[]
 }
 
+interface Component {
+  name: string
+  type: string
+  file_path: string
+  line_number: number | null
+  description: string | null
+  used_in: Array<{
+    used_in_file: string
+    used_in_component: string
+    line_number: number | null
+  }>
+  uses_components: string[]
+  handlers: Array<{
+    name: string
+    event_type: string
+    line_number: number | null
+  }>
+  data_fields: Array<{
+    name: string
+    data_type: string
+    source: string
+    required: boolean
+    default_value: string | null
+  }>
+  html_structure: string | null
+  has_form: boolean
+  lines_of_code: number
+  complexity_score: number
+}
+
+interface Page {
+  name: string
+  path: string
+  file_path: string
+  line_number: number | null
+  components: string[]
+  route_params: string[]
+  query_params: string[]
+  title: string | null
+  requires_auth: boolean
+  layout: string | null
+  component_count: number
+  api_calls_count: number
+  database_queries_count: number
+}
+
 export default function ScanDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -145,6 +192,12 @@ export default function ScanDetailPage() {
   const [apiRoutes, setApiRoutes] = useState<Record<string, APIRoute> | null>(null)
   const [loadingRoutes, setLoadingRoutes] = useState(false)
   const [routeSearchQuery, setRouteSearchQuery] = useState('')
+  const [components, setComponents] = useState<Record<string, Component> | null>(null)
+  const [loadingComponents, setLoadingComponents] = useState(false)
+  const [componentSearchQuery, setComponentSearchQuery] = useState('')
+  const [pages, setPages] = useState<Record<string, Page> | null>(null)
+  const [loadingPages, setLoadingPages] = useState(false)
+  const [pageSearchQuery, setPageSearchQuery] = useState('')
 
   // Bookmark management for tables
   const {
@@ -165,6 +218,16 @@ export default function ScanDetailPage() {
     getBookmarkCount: getRouteBookmarkCount,
     MAX_BOOKMARKS: MAX_ROUTE_BOOKMARKS,
   } = useApiBookmarks(scanId)
+
+  // Bookmark management for components
+  const {
+    bookmarkedComponents,
+    toggleBookmark: toggleComponentBookmark,
+    isBookmarked: isComponentBookmarked,
+    canAddMoreBookmarks: canAddMoreComponentBookmarks,
+    getBookmarkCount: getComponentBookmarkCount,
+    MAX_BOOKMARKS: MAX_COMPONENT_BOOKMARKS,
+  } = useComponentBookmarks(scanId)
 
   useEffect(() => {
     if (scanId) {
@@ -249,6 +312,44 @@ export default function ScanDetailPage() {
     }
   }
 
+  const loadComponents = async () => {
+    if (components) return // Already loaded
+
+    try {
+      setLoadingComponents(true)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/v1/scanner/scan/${scanId}/components`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setComponents(data.components)
+      }
+    } catch (err) {
+      console.error('Failed to load components:', err)
+    } finally {
+      setLoadingComponents(false)
+    }
+  }
+
+  const loadPages = async () => {
+    if (pages) return // Already loaded
+
+    try {
+      setLoadingPages(true)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/v1/scanner/scan/${scanId}/pages`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setPages(data.pages)
+      }
+    } catch (err) {
+      console.error('Failed to load pages:', err)
+    } finally {
+      setLoadingPages(false)
+    }
+  }
+
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab)
     if (tab === 'tables') {
@@ -256,6 +357,12 @@ export default function ScanDetailPage() {
     }
     if (tab === 'api') {
       loadApiRoutes()
+    }
+    if (tab === 'components') {
+      loadComponents()
+    }
+    if (tab === 'pages') {
+      loadPages()
     }
   }
 
@@ -904,6 +1011,423 @@ export default function ScanDetailPage() {
     )
   }
 
+  const renderComponentsTab = () => {
+    if (loadingComponents) {
+      return (
+        <div className="flex justify-center py-12">
+          <PinataSpinner size="lg" message="Loading components..." />
+        </div>
+      )
+    }
+
+    if (!components || Object.keys(components).length === 0) {
+      return (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">🧩</div>
+          <p className="text-gray-600">No components detected in this scan</p>
+        </div>
+      )
+    }
+
+    // Calculate high complexity threshold
+    const allComponents = Object.values(components)
+    const complexities = allComponents.map(c => c.complexity_score)
+    const sortedComplexities = [...complexities].sort((a, b) => b - a)
+    const highComplexityThreshold = sortedComplexities[Math.floor(sortedComplexities.length * 0.25)] || 5
+
+    const isHighComplexity = (component: Component) => {
+      return component.complexity_score >= highComplexityThreshold
+    }
+
+    // Filter by search
+    const filteredComponents = Object.entries(components).filter(([name, comp]) => {
+      if (!componentSearchQuery) return true
+      const searchLower = componentSearchQuery.toLowerCase()
+      return (
+        name.toLowerCase().includes(searchLower) ||
+        comp.file_path.toLowerCase().includes(searchLower) ||
+        comp.type.toLowerCase().includes(searchLower)
+      )
+    })
+
+    // Sort: bookmarked > complexity > alphabetical
+    const sortedComponents = [...filteredComponents].sort(([nameA, compA], [nameB, compB]) => {
+      const aBookmarked = isComponentBookmarked(nameA)
+      const bBookmarked = isComponentBookmarked(nameB)
+
+      if (aBookmarked && !bBookmarked) return -1
+      if (!aBookmarked && bBookmarked) return 1
+
+      if (compA.complexity_score !== compB.complexity_score)
+        return compB.complexity_score - compA.complexity_score
+
+      return nameA.localeCompare(nameB)
+    })
+
+    const handleComponentBookmarkClick = (componentName: string) => {
+      const success = toggleComponentBookmark(componentName)
+      if (!success && !isComponentBookmarked(componentName)) {
+        alert(`You can only bookmark up to ${MAX_COMPONENT_BOOKMARKS} components.`)
+      }
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Search and Info */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="flex-1 w-full sm:w-auto">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search components..."
+                  value={componentSearchQuery}
+                  onChange={(e) => setComponentSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4 text-sm">
+              <div className="flex items-center space-x-2">
+                <span className="text-gray-600">Bookmarks:</span>
+                <span className="font-semibold text-blue-600">{getComponentBookmarkCount()} / {MAX_COMPONENT_BOOKMARKS}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded font-medium">⚡ Complex</span>
+                <span className="text-gray-600 text-xs">= {highComplexityThreshold}+ score</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {componentSearchQuery && (
+          <div className="text-sm text-gray-600">
+            Found {sortedComponents.length} of {Object.keys(components).length} components
+          </div>
+        )}
+
+        {/* Components */}
+        {sortedComponents.map(([componentName, component]) => (
+          <div key={componentName} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 flex-wrap">
+                    <h3 className="text-xl font-mono font-bold text-gray-900">{component.name}</h3>
+                    <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded">{component.type}</span>
+
+                    {isHighComplexity(component) && (
+                      <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded font-medium">⚡ Complex</span>
+                    )}
+
+                    {isComponentBookmarked(componentName) && (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded font-medium">⭐ Bookmarked</span>
+                    )}
+
+                    {component.has_form && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">📝 Form</span>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-gray-600 mt-2">
+                    📄 {component.file_path}:{component.line_number}
+                  </p>
+
+                  {component.description && (
+                    <p className="text-sm text-gray-700 mt-1">{component.description}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={() => handleComponentBookmarkClick(componentName)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      isComponentBookmarked(componentName)
+                        ? 'bg-yellow-200 text-yellow-700 hover:bg-yellow-300'
+                        : canAddMoreComponentBookmarks()
+                        ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                    disabled={!isComponentBookmarked(componentName) && !canAddMoreComponentBookmarks()}
+                    title={isComponentBookmarked(componentName) ? 'Remove bookmark' : 'Bookmark component'}
+                  >
+                    <svg className="w-5 h-5" fill={isComponentBookmarked(componentName) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                  </button>
+
+                  <div className="flex space-x-3 text-center">
+                    <div>
+                      <div className="text-2xl font-bold text-purple-600">{component.lines_of_code}</div>
+                      <div className="text-xs text-gray-600">LOC</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-orange-600">{component.complexity_score}</div>
+                      <div className="text-xs text-gray-600">Complexity</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Details */}
+            <div className="p-6 space-y-4">
+              {/* Used In (Pages) */}
+              {component.used_in && component.used_in.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Used In ({component.used_in.length})</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {component.used_in.map((usage, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-blue-50 text-blue-700 text-sm rounded border border-blue-200">
+                        {usage.used_in_component}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Uses Components */}
+              {component.uses_components && component.uses_components.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Uses Components ({component.uses_components.length})</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {component.uses_components.map((compName, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded border border-purple-200">
+                        {compName}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Event Handlers */}
+              {component.handlers && component.handlers.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Event Handlers ({component.handlers.length})</h4>
+                  <div className="bg-green-50 rounded p-3 space-y-2">
+                    {component.handlers.map((handler, idx) => (
+                      <div key={idx} className="flex items-center space-x-3 text-sm">
+                        <span className="px-2 py-1 bg-green-200 text-green-800 rounded font-mono text-xs">{handler.event_type}</span>
+                        <span className="font-mono text-gray-700">{handler.name}</span>
+                        {handler.line_number && <span className="text-gray-500 text-xs">:{handler.line_number}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Data Fields */}
+              {component.data_fields && component.data_fields.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Data Captured ({component.data_fields.length})</h4>
+                  <div className="bg-blue-50 rounded p-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      {component.data_fields.map((field, idx) => (
+                        <div key={idx} className="flex items-center space-x-2 text-sm">
+                          <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 rounded text-xs">{field.source}</span>
+                          <span className="font-mono text-gray-700">{field.name}</span>
+                          <span className="text-gray-500 text-xs">: {field.data_type}</span>
+                          {field.required && <span className="text-red-600 text-xs">*</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Visual Structure */}
+              {component.html_structure && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Visual Structure</h4>
+                  <div className="bg-gray-50 rounded p-3">
+                    <pre className="text-xs font-mono text-gray-700 overflow-x-auto whitespace-pre-wrap">{component.html_structure}</pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const renderPagesTab = () => {
+    if (loadingPages) {
+      return (
+        <div className="flex justify-center py-12">
+          <PinataSpinner size="lg" message="Loading pages..." />
+        </div>
+      )
+    }
+
+    if (!pages || Object.keys(pages).length === 0) {
+      return (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">📄</div>
+          <p className="text-gray-600">No pages detected in this scan</p>
+        </div>
+      )
+    }
+
+    // Filter by search
+    const filteredPages = Object.entries(pages).filter(([name, page]) => {
+      if (!pageSearchQuery) return true
+      const searchLower = pageSearchQuery.toLowerCase()
+      return (
+        name.toLowerCase().includes(searchLower) ||
+        page.path.toLowerCase().includes(searchLower) ||
+        page.file_path.toLowerCase().includes(searchLower)
+      )
+    })
+
+    // Sort alphabetically by path
+    const sortedPages = [...filteredPages].sort(([, pageA], [, pageB]) => {
+      return pageA.path.localeCompare(pageB.path)
+    })
+
+    return (
+      <div className="space-y-6">
+        {/* Search */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search pages by name or path..."
+              value={pageSearchQuery}
+              onChange={(e) => setPageSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {pageSearchQuery && (
+          <div className="text-sm text-gray-600">
+            Found {sortedPages.length} of {Object.keys(pages).length} pages
+          </div>
+        )}
+
+        {/* Pages */}
+        {sortedPages.map(([pageName, page]) => (
+          <div key={pageName} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-cyan-50 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 flex-wrap">
+                    <h3 className="text-xl font-bold text-gray-900">{page.name}</h3>
+                    <span className="px-3 py-1 bg-blue-200 text-blue-800 text-sm rounded font-mono">{page.path}</span>
+
+                    {page.requires_auth && (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded font-medium">🔒 Protected</span>
+                    )}
+
+                    {page.layout && (
+                      <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded">Layout: {page.layout}</span>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-gray-600 mt-2">
+                    📄 {page.file_path}:{page.line_number}
+                  </p>
+                </div>
+
+                <div className="flex space-x-3 text-center">
+                  <div>
+                    <div className="text-2xl font-bold text-purple-600">{page.component_count}</div>
+                    <div className="text-xs text-gray-600">Components</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-green-600">{page.api_calls_count}</div>
+                    <div className="text-xs text-gray-600">API Calls</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-blue-600">{page.database_queries_count}</div>
+                    <div className="text-xs text-gray-600">DB Queries</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Details */}
+            <div className="p-6 space-y-4">
+              {/* Components Used */}
+              {page.components && page.components.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Components Used ({page.components.length})</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {page.components.map((compName, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-purple-50 text-purple-700 text-sm rounded border border-purple-200">
+                        {compName}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Route Parameters */}
+              {page.route_params && page.route_params.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Route Parameters</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {page.route_params.map((param, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-yellow-50 text-yellow-700 text-sm rounded border border-yellow-200 font-mono">
+                        :{param}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Metrics & Analytics */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Metrics & Analytics</h4>
+                <div className="bg-gray-50 rounded p-3 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Total Components</div>
+                    <div className="text-lg font-semibold text-purple-600">{page.component_count}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">API Integrations</div>
+                    <div className="text-lg font-semibold text-green-600">{page.api_calls_count}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Database Operations</div>
+                    <div className="text-lg font-semibold text-blue-600">{page.database_queries_count}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Authentication</div>
+                    <div className="text-lg font-semibold">{page.requires_auth ? '🔒 Required' : '🔓 Public'}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Developer Notes */}
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <span className="text-yellow-600">💡</span>
+                  </div>
+                  <div className="ml-3 text-sm text-yellow-700">
+                    <strong>Debug Tips:</strong> This page makes {page.api_calls_count} API call(s) and {page.database_queries_count} database quer{page.database_queries_count === 1 ? 'y' : 'ies'}.
+                    {page.component_count > 10 && ' Consider lazy loading some components to improve initial load time.'}
+                    {page.requires_auth && ' Authentication is required - ensure auth state is properly managed.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   const renderTablesTab = () => {
     if (loadingTables) {
       return (
@@ -1271,10 +1795,12 @@ export default function ScanDetailPage() {
           {[
             { id: 'overview', label: 'Overview', icon: '📊' },
             { id: 'workflows', label: 'UI Workflows', icon: '🔄' },
+            { id: 'components', label: 'Components', icon: '🧩' },
+            { id: 'pages', label: 'Pages', icon: '📄' },
             { id: 'tables', label: 'Database Tables', icon: '🗄️' },
+            { id: 'api', label: 'API Endpoints', icon: '🌐' },
             { id: 'nodes', label: 'All Nodes', icon: '🔍' },
             { id: 'database', label: 'Database', icon: '💾' },
-            { id: 'api', label: 'API Endpoints', icon: '🌐' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1296,10 +1822,12 @@ export default function ScanDetailPage() {
       <div>
         {activeTab === 'overview' && renderOverviewTab()}
         {activeTab === 'workflows' && renderWorkflowsTab()}
+        {activeTab === 'components' && renderComponentsTab()}
+        {activeTab === 'pages' && renderPagesTab()}
         {activeTab === 'tables' && renderTablesTab()}
+        {activeTab === 'api' && renderApiTab()}
         {activeTab === 'nodes' && renderNodesTab()}
         {activeTab === 'database' && renderDatabaseTab()}
-        {activeTab === 'api' && renderApiTab()}
       </div>
       </div>
     </div>
