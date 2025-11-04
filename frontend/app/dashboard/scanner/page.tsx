@@ -572,7 +572,7 @@ export default function ScannerPage() {
                         <div
                           className="absolute transition-all duration-500"
                           style={{
-                            right: 'calc(-0.75rem + 5px)',  // -3 (0.75rem) + 5px = move 5px to the right
+                            right: '-1.078125rem',  // Half of fontSize (2.15625rem / 2) to horizontally center on the edge
                             top: '50%',
                             transform: 'translateY(calc(-50% - 5px)) scaleX(-1)',  // Center vertically, move 5px up, and flip horizontally
                             fontSize: '2.15625rem'  // 15% larger than text-3xl (34.5px)
