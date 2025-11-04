@@ -171,7 +171,10 @@ async def run_scan(scan_id: str, request: ScanRequest):
             }
         }
 
-        # Create progress callback
+        # Get the current event loop to schedule callbacks from thread
+        loop = asyncio.get_event_loop()
+
+        # Create progress callback that schedules coroutines from thread
         total_files_estimate = 0
 
         def progress_callback(current, total, message):
@@ -179,11 +182,14 @@ async def run_scan(scan_id: str, request: ScanRequest):
             total_files_estimate = total
             progress_pct = (current / total) * 100 if total > 0 else 0
 
-            # Run async publish in the event loop
-            asyncio.create_task(publish_progress(
-                redis, scan_id, "scanning", progress_pct,
-                message, current, current * 3  # Rough estimate of nodes
-            ))
+            # Schedule coroutine from thread to main event loop
+            asyncio.run_coroutine_threadsafe(
+                publish_progress(
+                    redis, scan_id, "scanning", progress_pct,
+                    message, current, current * 3  # Rough estimate of nodes
+                ),
+                loop
+            )
 
         # Run scanner in thread pool to avoid blocking
         def run_scanner():
@@ -191,7 +197,6 @@ async def run_scan(scan_id: str, request: ScanRequest):
             return builder.build(request.repo_path, progress_callback=progress_callback)
 
         # Execute in thread pool
-        loop = asyncio.get_event_loop()
         result: ScannerScanResult = await loop.run_in_executor(None, run_scanner)
 
         # Analyze UI workflows
