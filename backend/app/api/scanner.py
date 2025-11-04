@@ -28,18 +28,15 @@ async def get_redis():
 
 
 class ScanRequest(BaseModel):
-    """Scan request model"""
-    repository_path: str
-    file_types: List[str] = [".cs", ".ts", ".html", ".xaml"]
-    exclude_patterns: List[str] = [
-        "node_modules",
-        "bin",
-        "obj",
-        ".git",
-        "dist",
-        "build",
-        "__pycache__",
-    ]
+    """Scan request model - matches frontend format"""
+    repo_path: str
+    source_type: str = "local"
+    file_extensions: List[str] = [".cs", ".ts", ".html", ".xaml"]
+    detect_database: bool = True
+    detect_api: bool = True
+    detect_files: bool = True
+    detect_messages: bool = True
+    detect_transforms: bool = True
 
 
 class ScanResponse(BaseModel):
@@ -56,6 +53,11 @@ async def get_environment():
         "status": "ready",
         "scanner_version": "1.0.0",
         "supported_languages": ["C#", "TypeScript", "HTML", "XAML"],
+        "is_docker": os.getenv("IS_DOCKER", "false").lower() == "true",
+        "supports_local_repos": True,  # Enable Local/Cloud toggle
+        "supports_github": False,
+        "supports_gitlab": False,
+        "supports_bitbucket": False,
     }
 
 
@@ -85,9 +87,9 @@ async def start_scan(request: ScanRequest, raw_request: Request = None):
 
     # Log scan start with request details
     print(f"[{scan_id}] ✅ Scan queued, starting background task...")
-    print(f"[{scan_id}] 📁 Repository: {request.repository_path}")
-    print(f"[{scan_id}] 📝 File types: {request.file_types}")
-    print(f"[{scan_id}] 🚫 Exclude patterns: {request.exclude_patterns}")
+    print(f"[{scan_id}] 📁 Repository: {request.repo_path}")
+    print(f"[{scan_id}] 📝 File extensions: {request.file_extensions}")
+    print(f"[{scan_id}] 🔍 Detections: DB={request.detect_database}, API={request.detect_api}, Files={request.detect_files}")
 
     # Initialize scan status in Redis
     redis = await get_redis()
