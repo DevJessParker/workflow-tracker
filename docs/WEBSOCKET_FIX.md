@@ -10,12 +10,19 @@ The WebSocket progress bar was not updating during code scans. Analysis of the l
 4. ❌ No progress updates reaching the frontend
 5. ❌ Frontend repeatedly trying to reconnect with exponential backoff
 
-### Root Cause
+### Root Causes
 
+**Initial Issue:**
 The backend API was missing:
 - Scanner API routes (`/api/v1/scanner/scan`, `/api/v1/scanner/repositories`)
 - WebSocket endpoint (`/ws/scan/{scan_id}`)
 - Redis pub/sub integration for progress streaming
+
+**Secondary Issue (Fixed in commit 02c3458):**
+After implementing the WebSocket endpoint, messages were not being processed by the frontend:
+- Backend sent raw JSON: `{"scan_id": "...", "status": "scanning", "progress": 50.0, ...}`
+- Frontend expected wrapped messages: `{"type": "scan_update", "scan_id": "...", "status": "scanning", ...}`
+- WebSocket connected successfully but frontend couldn't parse messages without the `type` discriminator field
 
 ## Solution Implemented
 
@@ -34,6 +41,10 @@ Key features:
 - Background task execution
 - Proper WebSocket lifecycle management
 - Automatic cleanup on scan completion
+- **Message format with type discrimination:**
+  - Connection confirmation: `{"type": "connected", "scan_id": "...", "message": "..."}`
+  - Progress updates: `{"type": "scan_update", "scan_id": "...", "status": "...", "progress": ..., ...}`
+  - All messages wrapped with `type` field for frontend message routing
 
 #### Updated `/backend/app/main.py`
 
