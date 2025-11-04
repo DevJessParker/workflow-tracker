@@ -21,20 +21,20 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS middleware
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+# Include routers FIRST (before middleware)
+app.include_router(scanner.router)
+app.include_router(scanner_websocket.router)
+
+# CORS middleware - add AFTER routes
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://frontend:3000").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=["*"],  # Allow all origins for WebSocket debugging
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Include routers
-app.include_router(scanner.router)
-app.include_router(scanner_websocket.router)
 
 
 @app.get("/")
@@ -84,12 +84,21 @@ async def startup_event():
     print(f"📊 Environment: {os.getenv('ENVIRONMENT', 'development')}")
     print(f"🔗 CORS origins: {CORS_ORIGINS}")
 
+    # List all registered routes for debugging
+    print("\n📍 Registered Routes:")
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            print(f"   {list(route.methods)} {route.path}")
+        elif hasattr(route, 'path'):
+            # WebSocket routes
+            print(f"   WebSocket {route.path}")
+
     # Check Redis connection
     if check_redis_connection():
         info = get_redis_info()
-        print(f"📡 Redis: Connected ({info.get('version', 'unknown')} - {info.get('connected_clients', 0)} clients)")
+        print(f"\n📡 Redis: Connected ({info.get('version', 'unknown')} - {info.get('connected_clients', 0)} clients)")
     else:
-        print("⚠️  Redis: Connection failed - WebSocket updates will not work")
+        print("\n⚠️  Redis: Connection failed - WebSocket updates will not work")
 
     print("✅ Backend ready!")
 
