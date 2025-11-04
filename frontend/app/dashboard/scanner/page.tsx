@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useScanWebSocket, ConnectionStatus } from '../../hooks/useScanWebSocket'
@@ -199,7 +199,7 @@ export default function ScannerPage() {
     }
   }
 
-  const loadScanResults = async (id: string) => {
+  const loadScanResults = useCallback(async (id: string) => {
     try {
       console.log(`📊 Loading scan results for: ${id}`)
 
@@ -223,43 +223,48 @@ export default function ScannerPage() {
       console.error('Failed to load scan results:', error)
       alert(`Failed to load results: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
-  }
+  }, [])
+
+  // WebSocket callbacks wrapped in useCallback to prevent infinite reconnects
+  const handleScanUpdate = useCallback((update) => {
+    console.log('📊 WebSocket update received:', update)
+
+    // Update scan status
+    setScanStatus({
+      scan_id: update.scan_id,
+      status: update.status || 'unknown',
+      progress: update.progress || 0,
+      message: update.message || '',
+      files_scanned: update.files_scanned || 0,
+      nodes_found: update.nodes_found || 0,
+      eta: update.eta,
+      total_files: update.total_files,
+    })
+
+    // Handle completion
+    if (update.status === 'completed') {
+      console.log('✅ Scan completed!')
+      setScanning(false)
+      loadScanResults(update.scan_id)
+    } else if (update.status === 'failed') {
+      console.error('❌ Scan failed:', update.message)
+      setScanning(false)
+      alert(`Scan failed: ${update.message}`)
+    }
+  }, [loadScanResults])
+
+  const handleConnectionChange = useCallback((status) => {
+    console.log('🔌 WebSocket connection status:', status)
+    setWsConnectionStatus(status)
+  }, [])
 
   // WebSocket hook for real-time scan updates
   useScanWebSocket({
     url: WS_URL,
     scanId: scanId || '',
     enabled: !!scanId && scanning,
-    onUpdate: (update) => {
-      console.log('📊 WebSocket update received:', update)
-
-      // Update scan status
-      setScanStatus({
-        scan_id: update.scan_id,
-        status: update.status || 'unknown',
-        progress: update.progress || 0,
-        message: update.message || '',
-        files_scanned: update.files_scanned || 0,
-        nodes_found: update.nodes_found || 0,
-        eta: update.eta,
-        total_files: update.total_files,
-      })
-
-      // Handle completion
-      if (update.status === 'completed') {
-        console.log('✅ Scan completed!')
-        setScanning(false)
-        loadScanResults(update.scan_id)
-      } else if (update.status === 'failed') {
-        console.error('❌ Scan failed:', update.message)
-        setScanning(false)
-        alert(`Scan failed: ${update.message}`)
-      }
-    },
-    onConnectionChange: (status) => {
-      console.log('🔌 WebSocket connection status:', status)
-      setWsConnectionStatus(status)
-    },
+    onUpdate: handleScanUpdate,
+    onConnectionChange: handleConnectionChange,
   })
 
   const handleLogout = () => {
