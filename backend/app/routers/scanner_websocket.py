@@ -10,12 +10,17 @@ import json
 import logging
 from typing import Dict, Set
 from datetime import datetime
-
-from app.redis_client import async_redis_client
+import redis.asyncio as aioredis
+import os
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Redis configuration
+REDIS_HOST = os.getenv('REDIS_HOST', 'pinata-redis')
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+REDIS_DB = int(os.getenv('REDIS_DB', '0'))
 
 # Track active WebSocket connections per scan
 active_connections: Dict[str, Set[WebSocket]] = {}
@@ -85,16 +90,39 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
         websocket: WebSocket connection
         scan_id: Unique identifier for the scan to monitor
     """
-    await manager.connect(websocket, scan_id)
-
-    # Create async Redis pubsub client for this connection
-    pubsub = async_redis_client.pubsub()
-    channel = f"scan:{scan_id}"
+    # Create a fresh Redis client for this WebSocket connection
+    redis_client = None
+    pubsub = None
 
     try:
+        logger.info(f"[{scan_id}] 🔌 WebSocket connection attempt from {websocket.client}")
+
+        # Accept the WebSocket connection
+        await manager.connect(websocket, scan_id)
+        logger.info(f"[{scan_id}] ✅ WebSocket accepted")
+
+        # Create async Redis client for this connection
+        redis_client = aioredis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            db=REDIS_DB,
+            decode_responses=True,
+            socket_connect_timeout=5
+        )
+        logger.info(f"[{scan_id}] 📡 Redis client created")
+
+        # Test Redis connection
+        await redis_client.ping()
+        logger.info(f"[{scan_id}] ✅ Redis ping successful")
+
+        # Create pubsub
+        pubsub = redis_client.pubsub()
+        channel = f"scan:{scan_id}"
+        logger.info(f"[{scan_id}] 📡 Pubsub created, subscribing to: {channel}")
+
         # Subscribe to Redis channel for this scan
         await pubsub.subscribe(channel)
-        logger.info(f"[{scan_id}] 📡 Subscribed to Redis channel: {channel}")
+        logger.info(f"[{scan_id}] ✅ Subscribed to Redis channel: {channel}")
 
         # Send initial connection confirmation
         await websocket.send_json({
@@ -176,22 +204,39 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
 
     except Exception as e:
         logger.error(f"[{scan_id}] ❌ WebSocket error: {e}")
+        import traceback
+        traceback.print_exc()
         try:
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.send_json({
                     "type": "error",
-                    "message": "Internal server error",
+                    "message": f"Internal server error: {str(e)}",
                     "timestamp": datetime.utcnow().isoformat()
                 })
-        except:
-            pass
+        except Exception as send_error:
+            logger.error(f"[{scan_id}] ❌ Error sending error message: {send_error}")
 
     finally:
         # Clean up
+        logger.info(f"[{scan_id}] 🧹 Cleaning up WebSocket connection...")
         manager.disconnect(websocket, scan_id)
-        await pubsub.unsubscribe(channel)
-        await pubsub.close()
-        logger.info(f"[{scan_id}] 🧹 Cleaned up WebSocket connection")
+
+        if pubsub:
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.close()
+                logger.info(f"[{scan_id}] ✅ Pubsub closed")
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Error closing pubsub: {e}")
+
+        if redis_client:
+            try:
+                await redis_client.close()
+                logger.info(f"[{scan_id}] ✅ Redis client closed")
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Error closing Redis client: {e}")
+
+        logger.info(f"[{scan_id}] ✅ Cleanup complete")
 
 
 @router.get("/ws/scan/{scan_id}/connections")
