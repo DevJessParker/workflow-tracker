@@ -129,18 +129,22 @@ class DatabaseTableAnalyzer:
         # Build an index of all schema files first (one-time scan)
         print(f"  📂 Scanning for schema files...")
         schema_files = []
-        for pattern in schema_patterns:
-            schema_files.extend(repo_path.glob(pattern))
-        print(f"  ✓ Found {len(schema_files)} potential schema files")
+        for idx, pattern in enumerate(schema_patterns, 1):
+            print(f"     Scanning pattern {idx}/{len(schema_patterns)}: {pattern}")
+            pattern_files = list(repo_path.glob(pattern))
+            schema_files.extend(pattern_files)
+            print(f"     ✓ Found {len(pattern_files)} files (total: {len(schema_files)})")
+        print(f"  ✓ Found {len(schema_files)} potential schema files total")
 
         # Limit the number of tables to process to prevent hanging
         tables_to_process = list(self.tables.keys())[:100]  # Limit to first 100 tables
         if len(self.tables) > 100:
             print(f"  ⚠️  Processing first 100 of {len(self.tables)} tables to avoid timeout")
 
+        print(f"  🔍 Matching {len(tables_to_process)} tables to schema files...")
         for idx, table_name in enumerate(tables_to_process):
             if idx % 10 == 0:
-                print(f"  📊 Processing table {idx + 1}/{len(tables_to_process)}...")
+                print(f"  📊 Processing table {idx + 1}/{len(tables_to_process)}... ({table_name})")
 
             # Search for files that might contain this table's definition
             for file_path in schema_files:
@@ -336,9 +340,12 @@ class DatabaseTableAnalyzer:
         # Build an index of all migration files first (one-time scan)
         print(f"  📂 Scanning for migration files...")
         migration_files = []
-        for pattern in migration_patterns:
-            migration_files.extend(repo_path.glob(pattern))
-        print(f"  ✓ Found {len(migration_files)} potential migration files")
+        for idx, pattern in enumerate(migration_patterns, 1):
+            print(f"     Scanning pattern {idx}/{len(migration_patterns)}: {pattern}")
+            pattern_files = list(repo_path.glob(pattern))
+            migration_files.extend(pattern_files)
+            print(f"     ✓ Found {len(pattern_files)} files (total: {len(migration_files)})")
+        print(f"  ✓ Found {len(migration_files)} potential migration files total")
 
         # Limit migration search if too many files
         if len(migration_files) > 500:
@@ -348,9 +355,10 @@ class DatabaseTableAnalyzer:
         # Only process tables that have schema files (already limited to 100)
         tables_with_schemas = [t for t in self.tables.keys() if self.tables[t].schema_file]
 
+        print(f"  🔍 Checking migrations for {len(tables_with_schemas)} tables...")
         for idx, table_name in enumerate(tables_with_schemas):
-            if idx % 10 == 0 and idx > 0:
-                print(f"  📊 Checking migrations for table {idx + 1}/{len(tables_with_schemas)}...")
+            if idx % 10 == 0:
+                print(f"  📊 Checking migrations for table {idx + 1}/{len(tables_with_schemas)}... ({table_name})")
 
             migrations = []
             for file_path in migration_files:
