@@ -560,19 +560,20 @@ export default function ScannerPage() {
                       className="absolute left-0 top-0 h-3 rounded-full transition-all duration-500 ease-out"
                       style={{
                         width: `${scanStatus.progress}%`,
-                        background: 'linear-gradient(90deg, #667eea 0%, #764ba2 14%, #f093fb 28%, #f5576c 42%, #feca57 57%, #48dbfb 71%, #0abde3 85%, #00d2d3 100%)',
+                        background: 'linear-gradient(90deg, #E74C3C 0%, #E67E22 14.3%, #F1C40F 28.6%, #2ECC71 42.9%, #3498DB 57.1%, #6C3483 71.4%, #9B59B6 85.7%, #E91E63 100%)',
                         backgroundSize: `${100 / (scanStatus.progress || 1) * 100}% 100%`,
                         backgroundPosition: '0% 0%',
-                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.4)'
+                        boxShadow: '0 2px 8px rgba(231, 76, 60, 0.4)'
                       }}
                     >
                       {/* Pinata at the tip of progress bar */}
                       {scanStatus.progress > 2 && (
                         <div
-                          className="absolute -right-3 transition-all duration-500"
+                          className="absolute transition-all duration-500"
                           style={{
+                            right: 'calc(-0.75rem + 5px)',  // -3 (0.75rem) + 5px = move 5px to the right
                             top: '50%',
-                            transform: 'translateY(-50%) scaleX(-1)',  // Center vertically and flip horizontally
+                            transform: 'translateY(calc(-50% - 5px)) scaleX(-1)',  // Center vertically, move 5px up, and flip horizontally
                             fontSize: '2.15625rem'  // 15% larger than text-3xl (34.5px)
                           }}
                         >
