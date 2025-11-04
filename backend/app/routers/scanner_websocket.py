@@ -13,7 +13,10 @@ from typing import Dict, Set, Optional
 from datetime import datetime
 import redis.asyncio as aioredis
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
@@ -104,7 +107,14 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
         websocket: WebSocket connection
         scan_id: Unique identifier for the scan to monitor
     """
-    await manager.connect(websocket, scan_id)
+    logger.info(f"[{scan_id}] 🔌 New WebSocket connection request")
+
+    try:
+        await manager.connect(websocket, scan_id)
+        logger.info(f"[{scan_id}] ✅ WebSocket accepted and connected")
+    except Exception as e:
+        logger.error(f"[{scan_id}] ❌ Failed to accept WebSocket: {e}")
+        raise
 
     # Get async Redis client
     redis = await get_async_redis()

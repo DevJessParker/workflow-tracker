@@ -12,9 +12,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Redis connection configuration
-REDIS_HOST = os.getenv('REDIS_HOST', 'pinata-redis')
-REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
-REDIS_DB = int(os.getenv('REDIS_DB', '0'))
+# Use REDIS_URL if available (preferred), otherwise fall back to individual components
+REDIS_URL = os.getenv('REDIS_URL', None)
+
+if REDIS_URL:
+    # Parse Redis URL to extract connection parameters
+    # Format: redis://host:port/db
+    import re
+    url_pattern = r'redis://([^:]+):(\d+)/(\d+)'
+    match = re.match(url_pattern, REDIS_URL)
+    if match:
+        REDIS_HOST = match.group(1)
+        REDIS_PORT = int(match.group(2))
+        REDIS_DB = int(match.group(3))
+    else:
+        # Fallback to simple URL parsing
+        REDIS_HOST = 'redis'
+        REDIS_PORT = 6379
+        REDIS_DB = 0
+else:
+    # Fall back to individual environment variables
+    REDIS_HOST = os.getenv('REDIS_HOST', 'redis')  # Changed from 'pinata-redis' to 'redis'
+    REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+    REDIS_DB = int(os.getenv('REDIS_DB', '0'))
 
 # Create Redis client
 redis_client = redis.Redis(
