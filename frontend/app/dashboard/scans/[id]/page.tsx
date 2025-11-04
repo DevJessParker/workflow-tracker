@@ -4,6 +4,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import DashboardNavbar from '@/app/components/DashboardNavbar'
 import PinataSpinner from '@/app/components/PinataSpinner'
+import { useTableBookmarks } from '@/app/hooks/useTableBookmarks'
 
 // Lazy load MermaidDiagram for better performance
 const MermaidDiagram = lazy(() => import('../../../components/MermaidDiagram'))
@@ -104,6 +105,17 @@ export default function ScanDetailPage() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<UIWorkflow | null>(null)
   const [databaseTables, setDatabaseTables] = useState<Record<string, DatabaseTable> | null>(null)
   const [loadingTables, setLoadingTables] = useState(false)
+  const [tableSearchQuery, setTableSearchQuery] = useState('')
+
+  // Bookmark management
+  const {
+    bookmarkedTables,
+    toggleBookmark,
+    isBookmarked,
+    canAddMoreBookmarks,
+    getBookmarkCount,
+    MAX_BOOKMARKS,
+  } = useTableBookmarks(scanId)
 
   useEffect(() => {
     if (scanId) {
@@ -537,29 +549,179 @@ export default function ScanDetailPage() {
       )
     }
 
+    // Calculate heavy usage threshold (tables with operations > 75th percentile)
+    const allTables = Object.values(databaseTables)
+    const operationCounts = allTables.map(t => t.read_count + t.write_count)
+    const sortedCounts = [...operationCounts].sort((a, b) => b - a)
+    const heavyUsageThreshold = sortedCounts[Math.floor(sortedCounts.length * 0.25)] || 5
+
+    const isHeavyUsage = (table: DatabaseTable) => {
+      return (table.read_count + table.write_count) >= heavyUsageThreshold
+    }
+
+    // Filter tables by search query
+    const filteredTables = Object.entries(databaseTables).filter(([tableName, table]) => {
+      if (!tableSearchQuery) return true
+      return tableName.toLowerCase().includes(tableSearchQuery.toLowerCase())
+    })
+
+    // Sort tables: bookmarked first, then by usage (heavy to light), then alphabetically
+    const sortedTables = [...filteredTables].sort(([nameA, tableA], [nameB, tableB]) => {
+      const aBookmarked = isBookmarked(nameA)
+      const bBookmarked = isBookmarked(nameB)
+
+      // Bookmarked tables first
+      if (aBookmarked && !bBookmarked) return -1
+      if (!aBookmarked && bBookmarked) return 1
+
+      // Then by total operations (descending)
+      const aOps = tableA.read_count + tableA.write_count
+      const bOps = tableB.read_count + tableB.write_count
+      if (aOps !== bOps) return bOps - aOps
+
+      // Finally alphabetically
+      return nameA.localeCompare(nameB)
+    })
+
+    const handleBookmarkClick = (tableName: string) => {
+      const success = toggleBookmark(tableName)
+      if (!success && !isBookmarked(tableName)) {
+        alert(`You can only bookmark up to ${MAX_BOOKMARKS} tables.`)
+      }
+    }
+
     return (
       <div className="space-y-6">
-        {Object.entries(databaseTables).map(([tableName, table]) => (
+        {/* Search and Bookmark Info */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="flex-1 w-full sm:w-auto">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search tables..."
+                  value={tableSearchQuery}
+                  onChange={(e) => setTableSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <svg
+                  className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4 text-sm">
+              <div className="flex items-center space-x-2">
+                <span className="text-gray-600">Bookmarks:</span>
+                <span className="font-semibold text-blue-600">
+                  {getBookmarkCount()} / {MAX_BOOKMARKS}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded font-medium">
+                  🔥 Heavy
+                </span>
+                <span className="text-gray-600 text-xs">
+                  = {heavyUsageThreshold}+ ops
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Results count */}
+        {tableSearchQuery && (
+          <div className="text-sm text-gray-600">
+            Found {sortedTables.length} of {Object.keys(databaseTables).length} tables
+          </div>
+        )}
+
+        {/* Tables */}
+        {sortedTables.map(([tableName, table]) => (
           <div key={tableName} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             {/* Table Header */}
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{table.table_name}</h3>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3">
+                    <h3 className="text-xl font-bold text-gray-900">{table.table_name}</h3>
+
+                    {/* Heavy Usage Badge */}
+                    {isHeavyUsage(table) && (
+                      <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded font-medium">
+                        🔥 Heavy
+                      </span>
+                    )}
+
+                    {/* Bookmarked Badge */}
+                    {isBookmarked(tableName) && (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded font-medium">
+                        ⭐ Bookmarked
+                      </span>
+                    )}
+                  </div>
+
                   {table.schema_file && (
                     <p className="text-sm text-gray-600 mt-1">
                       📄 {table.schema_file}:{table.schema_line}
                     </p>
                   )}
                 </div>
-                <div className="flex space-x-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">{table.read_count}</div>
-                    <div className="text-xs text-gray-600">Reads</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">{table.write_count}</div>
-                    <div className="text-xs text-gray-600">Writes</div>
+
+                <div className="flex items-center space-x-4">
+                  {/* Bookmark Button */}
+                  <button
+                    onClick={() => handleBookmarkClick(tableName)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      isBookmarked(tableName)
+                        ? 'bg-yellow-200 text-yellow-700 hover:bg-yellow-300'
+                        : canAddMoreBookmarks()
+                        ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                    disabled={!isBookmarked(tableName) && !canAddMoreBookmarks()}
+                    title={
+                      isBookmarked(tableName)
+                        ? 'Remove bookmark'
+                        : canAddMoreBookmarks()
+                        ? 'Bookmark table'
+                        : 'Maximum bookmarks reached'
+                    }
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill={isBookmarked(tableName) ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                      />
+                    </svg>
+                  </button>
+
+                  {/* Operation Counts */}
+                  <div className="flex space-x-3">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{table.read_count}</div>
+                      <div className="text-xs text-gray-600">Reads</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{table.write_count}</div>
+                      <div className="text-xs text-gray-600">Writes</div>
+                    </div>
                   </div>
                 </div>
               </div>
