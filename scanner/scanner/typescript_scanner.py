@@ -43,7 +43,7 @@ class TypeScriptScanner(BaseScanner):
         """Check if file is a TypeScript/JavaScript file."""
         return file_path.endswith(('.ts', '.js', '.tsx', '.jsx'))
 
-    def scan_file(self, file_path: str) -> WorkflowGraph:
+    def scan_file(self, file_path: str, schema_registry: dict = None) -> WorkflowGraph:
         """Scan TypeScript file for workflow patterns."""
         self.graph = WorkflowGraph()
         content = self.read_file(file_path)

@@ -56,7 +56,7 @@ class AngularScanner(BaseScanner):
         """Check if file is an Angular TypeScript or HTML file."""
         return file_path.endswith(('.ts', '.html', '.component.ts', '.component.html'))
 
-    def scan_file(self, file_path: str) -> WorkflowGraph:
+    def scan_file(self, file_path: str, schema_registry: dict = None) -> WorkflowGraph:
         """Scan Angular file for UI workflows."""
         self.graph = WorkflowGraph()
         content = self.read_file(file_path)

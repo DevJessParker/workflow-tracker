@@ -32,11 +32,12 @@ class BaseScanner(ABC):
         pass
 
     @abstractmethod
-    def scan_file(self, file_path: str) -> WorkflowGraph:
+    def scan_file(self, file_path: str, schema_registry: dict = None) -> WorkflowGraph:
         """Scan a single file and extract workflow information.
 
         Args:
             file_path: Path to the file to scan
+            schema_registry: Optional dictionary mapping table/entity names to TableSchema objects
 
         Returns:
             WorkflowGraph containing discovered workflows

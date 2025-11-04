@@ -74,6 +74,23 @@ class WorkflowGraphBuilder:
         # Notify callback of total files discovered
         if progress_callback:
             progress_callback(0, len(files_to_scan), f"Found {len(files_to_scan):,} files to scan")
+
+        # FIRST PASS: Discover database schemas/models
+        print("="*60)
+        print("DISCOVERING DATABASE SCHEMAS")
+        print("="*60)
+
+        if progress_callback:
+            progress_callback(0, len(files_to_scan), "Discovering database schemas...")
+
+        self._discover_schemas(files_to_scan, result, progress_callback)
+
+        print(f"✓ Found {len(result.schemas_discovered):,} database schemas\n")
+
+        if progress_callback:
+            progress_callback(0, len(files_to_scan), f"Schema discovery complete: {len(result.schemas_discovered):,} tables found")
+
+        # SECOND PASS: Scan files for workflow operations
         print("="*60)
         print("SCANNING FILES")
         print("="*60)
@@ -87,7 +104,8 @@ class WorkflowGraphBuilder:
                 scanner = self._get_scanner_for_file(file_path)
 
                 if scanner:
-                    file_graph = scanner.scan_file(file_path)
+                    # Pass schema registry to scanner for enhanced table name detection
+                    file_graph = scanner.scan_file(file_path, schema_registry=result.schemas_discovered)
                     # Merge file graph into result graph
                     self._merge_graphs(result.graph, file_graph)
                     result.files_scanned += 1
@@ -149,9 +167,9 @@ class WorkflowGraphBuilder:
 
             # Notify callback about edge inference phase
             if progress_callback:
-                progress_callback(len(files_to_scan), len(files_to_scan), "Inferring workflow edges...")
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing workflow relationships...")
 
-            self._infer_workflow_edges(result.graph, edge_inference_config)
+            self._infer_workflow_edges(result.graph, edge_inference_config, len(files_to_scan), progress_callback)
         else:
             print("\n⚠️  Skipping edge inference (disabled in config)")
 
@@ -167,6 +185,49 @@ class WorkflowGraphBuilder:
             print(f"  Errors: {len(result.errors)}")
 
         return result
+
+    def _discover_schemas(self, files_to_scan: List[str], result, progress_callback=None):
+        """Discover database schemas/models in the codebase.
+
+        This performs a first pass to identify entity/model definitions
+        before scanning for workflow operations.
+
+        Args:
+            files_to_scan: List of files to check for schemas
+            result: ScanResult to store discovered schemas
+            progress_callback: Optional callback for progress updates
+        """
+        from scanner import CSharpScanner
+
+        # Only scan C# files for schema detection (can extend to TypeScript/etc later)
+        csharp_scanner = CSharpScanner(self.config.get('scanner', {}))
+        schemas_found = 0
+        files_checked = 0
+
+        for file_path in files_to_scan:
+            if file_path.endswith('.cs'):
+                try:
+                    schemas = csharp_scanner.detect_schemas(file_path)
+
+                    for schema in schemas:
+                        # Store by both entity name and table name for easy lookup
+                        result.schemas_discovered[schema.entity_name] = schema
+                        result.schemas_discovered[schema.table_name] = schema
+                        schemas_found += 1
+
+                    files_checked += 1
+
+                    # Send progress update every 100 files
+                    if progress_callback and files_checked % 100 == 0:
+                        progress_msg = f"Discovering schemas... ({files_checked} files checked, {len(result.schemas_discovered):,} schemas found)"
+                        progress_callback(0, len(files_to_scan), progress_msg)
+
+                except Exception as e:
+                    # Don't fail the entire scan if schema detection fails
+                    pass
+
+        print(f"  Checked {files_checked} C# files")
+        print(f"  Discovered {len(result.schemas_discovered)} unique schemas")
 
     def _find_files(self, root_path: str, include_extensions: List[str], exclude_dirs: List[str]) -> List[str]:
         """Find all files to scan in the repository.
@@ -243,7 +304,8 @@ class WorkflowGraphBuilder:
         for edge in source.edges:
             target.add_edge(edge)
 
-    def _infer_workflow_edges(self, graph: WorkflowGraph, config: Dict[str, Any] = None):
+    def _infer_workflow_edges(self, graph: WorkflowGraph, config: Dict[str, Any] = None,
+                             total_files: int = 0, progress_callback = None):
         """Infer edges between nodes based on workflow patterns.
 
         This creates connections between related workflow steps, such as:
@@ -254,6 +316,8 @@ class WorkflowGraphBuilder:
         Args:
             graph: Workflow graph to analyze
             config: Edge inference configuration
+            total_files: Total number of files scanned (for progress calculation)
+            progress_callback: Optional callback for progress updates
         """
         if config is None:
             config = {}
@@ -272,6 +336,9 @@ class WorkflowGraphBuilder:
                 nodes_by_file[file_path].append(node)
 
             edge_count = 0
+            files_processed = 0
+            total_file_count = len(nodes_by_file)
+
             # Create edges within each file based on line number proximity
             for file_path, nodes in nodes_by_file.items():
                 # Sort nodes by line number
@@ -294,13 +361,24 @@ class WorkflowGraphBuilder:
                         graph.add_edge(edge)
                         edge_count += 1
 
+                files_processed += 1
+
+                # Send progress update every 50 files
+                if progress_callback and files_processed % 50 == 0:
+                    progress_msg = f"Creating proximity edges... ({files_processed}/{total_file_count} files, {edge_count:,} edges)"
+                    progress_callback(total_files, total_files, progress_msg)
+
             print(f"    Added {edge_count} proximity edges")
+
+            if progress_callback:
+                progress_msg = f"Proximity edges complete: {edge_count:,} edges created"
+                progress_callback(total_files, total_files, progress_msg)
 
         # Create edges based on data flow patterns
         if config.get('data_flow_edges', True):
-            self._infer_data_flow_edges(graph)
+            self._infer_data_flow_edges(graph, total_files, progress_callback)
 
-    def _infer_data_flow_edges(self, graph: WorkflowGraph):
+    def _infer_data_flow_edges(self, graph: WorkflowGraph, total_files: int = 0, progress_callback = None):
         """Infer edges based on common data flow patterns.
 
         For example:
@@ -310,11 +388,17 @@ class WorkflowGraphBuilder:
 
         Args:
             graph: Workflow graph to analyze
+            total_files: Total number of files scanned (for progress calculation)
+            progress_callback: Optional callback for progress updates
         """
         from models import WorkflowType
         from collections import defaultdict
+        import bisect
 
         print("  Inferring data flow edges...")
+
+        if progress_callback:
+            progress_callback(total_files, total_files, "Analyzing data flow patterns...")
 
         # Create a set of existing edges for O(1) lookup
         existing_edges = {(e.source, e.target) for e in graph.edges}
@@ -324,19 +408,41 @@ class WorkflowGraphBuilder:
         for node in graph.nodes:
             nodes_by_file_and_type[node.location.file_path][node.type].append(node)
 
-        edge_count = 0
+        # Sort nodes by line number within each file/type for binary search optimization
+        for file_path, types_dict in nodes_by_file_and_type.items():
+            for node_type, nodes in types_dict.items():
+                nodes.sort(key=lambda n: n.location.line_number)
+
+        total_edge_count = 0
+        files_processed = 0
+        total_file_count = len(nodes_by_file_and_type)
 
         # Pattern: API call followed by DB write (data ingestion)
-        # Only check within the same file
+        edge_count = 0
         for file_path, types_dict in nodes_by_file_and_type.items():
             api_calls = types_dict.get(WorkflowType.API_CALL, [])
             db_writes = types_dict.get(WorkflowType.DATABASE_WRITE, [])
 
+            # OPTIMIZATION: Use sorted list and binary search instead of nested loops
             for api_node in api_calls:
-                for db_node in db_writes:
-                    if (db_node.location.line_number > api_node.location.line_number and
-                        db_node.location.line_number - api_node.location.line_number < 50):
+                # Find db_writes that are within 50 lines after this API call
+                # Using binary search to find the starting position
+                min_line = api_node.location.line_number
+                max_line = api_node.location.line_number + 50
 
+                # Find first db_write at or after api_node line
+                start_idx = bisect.bisect_left(db_writes, min_line,
+                                              key=lambda n: n.location.line_number)
+
+                # Check only db_writes within range (much faster than checking all)
+                for i in range(start_idx, len(db_writes)):
+                    db_node = db_writes[i]
+
+                    # Early termination: if we're past the range, stop
+                    if db_node.location.line_number > max_line:
+                        break
+
+                    if db_node.location.line_number > min_line:
                         # Check if edge doesn't already exist (O(1) lookup)
                         if (api_node.id, db_node.id) not in existing_edges:
                             edge = WorkflowEdge(
@@ -348,6 +454,14 @@ class WorkflowGraphBuilder:
                             graph.add_edge(edge)
                             existing_edges.add((api_node.id, db_node.id))
                             edge_count += 1
+                            total_edge_count += 1
+
+            files_processed += 1
+
+            # Send progress update every 25 files
+            if progress_callback and files_processed % 25 == 0:
+                progress_msg = f"Data flow analysis... ({files_processed}/{total_file_count} files, {total_edge_count:,} edges)"
+                progress_callback(total_files, total_files, progress_msg)
 
         print(f"    Added {edge_count} data ingestion edges")
 
@@ -357,11 +471,24 @@ class WorkflowGraphBuilder:
             db_reads = types_dict.get(WorkflowType.DATABASE_READ, [])
             transforms = types_dict.get(WorkflowType.DATA_TRANSFORM, [])
 
+            # OPTIMIZATION: Use sorted list and binary search
             for db_node in db_reads:
-                for transform_node in transforms:
-                    if (transform_node.location.line_number > db_node.location.line_number and
-                        transform_node.location.line_number - db_node.location.line_number < 30):
+                min_line = db_node.location.line_number
+                max_line = db_node.location.line_number + 30
 
+                # Find first transform at or after db_node line
+                start_idx = bisect.bisect_left(transforms, min_line,
+                                              key=lambda n: n.location.line_number)
+
+                # Check only transforms within range
+                for i in range(start_idx, len(transforms)):
+                    transform_node = transforms[i]
+
+                    # Early termination
+                    if transform_node.location.line_number > max_line:
+                        break
+
+                    if transform_node.location.line_number > min_line:
                         if (db_node.id, transform_node.id) not in existing_edges:
                             edge = WorkflowEdge(
                                 source=db_node.id,
@@ -372,5 +499,10 @@ class WorkflowGraphBuilder:
                             graph.add_edge(edge)
                             existing_edges.add((db_node.id, transform_node.id))
                             edge_count += 1
+                            total_edge_count += 1
 
         print(f"    Added {edge_count} data processing edges")
+
+        if progress_callback:
+            progress_msg = f"Data flow analysis complete: {total_edge_count:,} edges created"
+            progress_callback(total_files, total_files, progress_msg)
