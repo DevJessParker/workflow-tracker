@@ -23,6 +23,7 @@ from graph.builder import WorkflowGraphBuilder
 from models import ScanResult as ScannerScanResult
 from workflow_analyzer import WorkflowAnalyzer
 from database_analyzer import DatabaseTableAnalyzer
+from api_analyzer import APIRoutesAnalyzer
 
 # Import backend services
 from app.models.scan import ScanMetadata, ScanListResponse, UnviewedCountResponse
@@ -233,6 +234,12 @@ async def run_scan(scan_id: str, request: ScanRequest):
         database_tables = db_analyzer.analyze()
         database_tables_dict = db_analyzer.to_dict()
 
+        # Analyze API routes
+        print(f"[{scan_id}] 🌐 Analyzing API routes...")
+        api_analyzer = APIRoutesAnalyzer(result.graph, request.repo_path)
+        api_routes = api_analyzer.analyze()
+        api_routes_dict = api_analyzer.to_dict()
+
         # Save results to disk
         output_dir = Path(f'/tmp/scans/{scan_id}')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -298,6 +305,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
                 for wf in workflows
             ],
             'database_tables': database_tables_dict,
+            'api_routes': api_routes_dict,
             'scan_time_seconds': result.scan_time_seconds,
             'scan_duration': result.scan_time_seconds,  # Alias for frontend compatibility
             'errors': result.errors,
@@ -308,6 +316,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
 
         print(f"[{scan_id}] ✅ Found {len(workflows)} UI workflows")
         print(f"[{scan_id}] ✅ Analyzed {len(database_tables_dict)} database tables")
+        print(f"[{scan_id}] ✅ Analyzed {len(api_routes_dict)} API routes")
 
         # Complete scan
         await publish_progress(
@@ -691,4 +700,24 @@ async def get_database_tables(scan_id: str):
         'scan_id': scan_id,
         'tables': database_tables,
         'table_count': len(database_tables)
+    }
+
+
+@router.get("/scan/{scan_id}/api-routes")
+async def get_api_routes(scan_id: str):
+    """Get API routes analysis for a scan"""
+    results_file = Path(f'/tmp/scans/{scan_id}/results.json')
+
+    if not results_file.exists():
+        raise HTTPException(status_code=404, detail="Scan results not found")
+
+    with open(results_file, 'r') as f:
+        results = json.load(f)
+
+    api_routes = results.get('api_routes', {})
+
+    return {
+        'scan_id': scan_id,
+        'routes': api_routes,
+        'route_count': len(api_routes)
     }
