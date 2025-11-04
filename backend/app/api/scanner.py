@@ -1,94 +1,94 @@
 """
-Scanner API Routes - Handles code scanning operations
+Scanner API Router
+Handles repository scanning, analysis, and visualization endpoints
 """
-import asyncio
-import json
-import os
-import uuid
-from pathlib import Path
-from typing import Dict, List, Optional
 
-import redis.asyncio as aioredis
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from enum import Enum
+import os
+import sys
+import asyncio
+
+# Add scanner to path
+sys.path.insert(0, '/scanner')
+
+from graph.builder import WorkflowGraphBuilder
+from graph.renderer import WorkflowRenderer
 
 router = APIRouter(prefix="/api/v1/scanner", tags=["scanner"])
 
-# Redis connection
-redis_client: Optional[aioredis.Redis] = None
 
-
-async def get_redis():
-    """Get Redis client"""
-    global redis_client
-    if redis_client is None:
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        redis_client = await aioredis.from_url(redis_url, decode_responses=True)
-    return redis_client
+class RepoSourceType(str, Enum):
+    """Repository source types"""
+    LOCAL = "local"
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    BITBUCKET = "bitbucket"
 
 
 class ScanRequest(BaseModel):
-    """Scan request model"""
-    repository_path: str
-    file_types: List[str] = [".cs", ".ts", ".html", ".xaml"]
-    exclude_patterns: List[str] = [
-        "node_modules",
-        "bin",
-        "obj",
-        ".git",
-        "dist",
-        "build",
-        "__pycache__",
-    ]
+    """Request model for starting a scan"""
+    repo_path: str = Field(..., description="Path to repository (local or URL)")
+    source_type: RepoSourceType = Field(default=RepoSourceType.LOCAL, description="Repository source type")
+    file_extensions: List[str] = Field(default=[".cs", ".ts", ".js"], description="File extensions to scan")
+    detect_database: bool = Field(default=True, description="Detect database operations")
+    detect_api: bool = Field(default=True, description="Detect API calls")
+    detect_files: bool = Field(default=True, description="Detect file I/O")
+    detect_messages: bool = Field(default=True, description="Detect message queues")
+    detect_transforms: bool = Field(default=True, description="Detect data transforms")
+    organization_id: Optional[str] = Field(default=None, description="Organization ID (for cloud repos)")
 
 
 class ScanResponse(BaseModel):
-    """Scan response model"""
+    """Response model for scan results"""
     scan_id: str
     status: str
     message: str
+    files_scanned: Optional[int] = None
+    nodes_found: Optional[int] = None
+    edges_found: Optional[int] = None
 
 
-@router.get("/environment")
-async def get_environment():
-    """Get scanner environment info"""
-    return {
-        "status": "ready",
-        "scanner_version": "1.0.0",
-        "supported_languages": ["C#", "TypeScript", "HTML", "XAML"],
-    }
+class ScanStatus(BaseModel):
+    """Scan status model"""
+    scan_id: str
+    status: str
+    progress: float
+    message: str
+    files_scanned: int
+    nodes_found: int
+    eta: Optional[str] = None
+    total_files: Optional[int] = None
 
 
-@router.get("/repositories")
-async def get_repositories(source: str = "local"):
-    """Get available repositories"""
-    repos_dir = Path("/repos")
-    if not repos_dir.exists():
-        return []
-
-    repositories = []
-    for repo_path in repos_dir.iterdir():
-        if repo_path.is_dir() and not repo_path.name.startswith("."):
-            repositories.append({
-                "name": repo_path.name,
-                "path": str(repo_path),
-                "source": source,
-            })
-
-    return repositories
+# In-memory storage for scan results (replace with Redis/DB in production)
+SCAN_RESULTS = {}
+SCAN_STATUS = {}
 
 
 @router.post("/scan", response_model=ScanResponse)
 async def start_scan(request: ScanRequest):
-    """Start a code scan"""
+    """
+    Start a new repository scan
+
+    - **repo_path**: Path to repository (local directory or GitHub URL)
+    - **source_type**: Type of repository source (local, github, gitlab, bitbucket)
+    - **file_extensions**: List of file extensions to scan
+    - **detect_***: Various detection options
+    """
+    import uuid
     scan_id = str(uuid.uuid4())
 
-    # Log scan start
-    print(f"[{scan_id}] ✅ Scan queued, starting background task...")
+    # Validate repository path
+    if request.source_type == RepoSourceType.LOCAL:
+        if not os.path.exists(request.repo_path):
+            raise HTTPException(status_code=404, detail=f"Repository path not found: {request.repo_path}")
 
-    # Initialize scan status in Redis
-    redis = await get_redis()
-    scan_status = {
+    # Initialize scan status
+    SCAN_STATUS[scan_id] = {
         "scan_id": scan_id,
         "status": "queued",
         "progress": 0.0,
@@ -96,16 +96,12 @@ async def start_scan(request: ScanRequest):
         "files_scanned": 0,
         "nodes_found": 0,
         "eta": None,
-        "total_files": None,
+        "total_files": None
     }
 
-    await redis.set(
-        f"scan:status:{scan_id}",
-        json.dumps(scan_status),
-        ex=3600  # Expire after 1 hour
-    )
+    print(f"[{scan_id}] ✅ Scan queued, starting background task...")
 
-    # Start scan in background
+    # Start the scan in a true background task (non-blocking)
     asyncio.create_task(run_scan(scan_id, request))
 
     print(f"[{scan_id}] 📤 Returning response immediately to frontend")
@@ -117,125 +113,304 @@ async def start_scan(request: ScanRequest):
     )
 
 
-async def run_scan(scan_id: str, request: ScanRequest):
-    """Run the actual scan in background"""
-    redis = await get_redis()
+@router.get("/scan/{scan_id}/status", response_model=ScanStatus)
+async def get_scan_status(scan_id: str):
+    """Get the status of a running scan"""
+    if scan_id not in SCAN_STATUS:
+        print(f"❌ Scan {scan_id} not found in SCAN_STATUS")
+        print(f"❌ Available scan IDs: {list(SCAN_STATUS.keys())}")
+        raise HTTPException(status_code=404, detail="Scan not found")
 
-    try:
-        # Update status to discovering
-        await publish_progress(
-            redis, scan_id, "discovering", 0.0, "Discovering files...", 0, 0
-        )
+    status = SCAN_STATUS[scan_id]
+    print(f"[{scan_id}] 📊 Status request: {status['status']} - {status['progress']:.1f}% - {status['message']}")
 
-        # Simulate file discovery and scanning
-        # In reality, you would call your scanner here
-        await asyncio.sleep(1)
-
-        # Simulate progress updates
-        total_files = 100  # This would come from your scanner
-        for i in range(1, total_files + 1):
-            progress = (i / total_files) * 100
-            await publish_progress(
-                redis, scan_id, "scanning", progress,
-                f"Scanning file {i}/{total_files}", i, i * 3
-            )
-            await asyncio.sleep(0.1)  # Simulate scanning time
-
-        # Complete scan
-        await publish_progress(
-            redis, scan_id, "completed", 100.0,
-            "Scan completed successfully", total_files, total_files * 3
-        )
-
-        print(f"[{scan_id}] ✅ Scan completed: {total_files} files, {total_files * 3} nodes")
-
-    except Exception as e:
-        print(f"[{scan_id}] ❌ Scan failed: {e}")
-        await publish_progress(
-            redis, scan_id, "error", 0.0, f"Scan failed: {str(e)}", 0, 0
-        )
+    return status
 
 
-async def publish_progress(
-    redis: aioredis.Redis,
-    scan_id: str,
-    status: str,
-    progress: float,
-    message: str,
-    files_scanned: int,
-    nodes_found: int,
-):
-    """Publish scan progress to Redis"""
-    scan_status = {
+@router.get("/scans/active")
+async def get_active_scans():
+    """Get all active (non-completed) scans"""
+    active = []
+    for scan_id, status in SCAN_STATUS.items():
+        if status["status"] not in ["completed", "failed"]:
+            active.append(status)
+
+    print(f"📊 Active scans request: Found {len(active)} active scan(s)")
+    if active:
+        for scan in active:
+            print(f"   - {scan['scan_id']}: {scan['status']} - {scan['progress']:.1f}%")
+
+    return {"active_scans": active, "count": len(active)}
+
+
+@router.get("/scan/{scan_id}/results")
+async def get_scan_results(scan_id: str):
+    """Get the results of a completed scan"""
+    if scan_id not in SCAN_RESULTS:
+        raise HTTPException(status_code=404, detail="Scan results not found")
+
+    result = SCAN_RESULTS[scan_id]
+
+    return {
         "scan_id": scan_id,
-        "status": status,
-        "progress": progress,
-        "message": message,
-        "files_scanned": files_scanned,
-        "nodes_found": nodes_found,
-        "eta": None,
-        "total_files": None,
+        "status": "completed",
+        "files_scanned": result.files_scanned,
+        "scan_duration": result.scan_time_seconds,
+        "graph": {
+            "nodes": [
+                {
+                    "id": node.id,
+                    "type": node.type.value,
+                    "name": node.name,
+                    "description": node.description,
+                    "location": {
+                        "file_path": node.location.file_path,
+                        "line_number": node.location.line_number
+                    },
+                    "table_name": node.table_name,
+                    "endpoint": node.endpoint,
+                    "http_method": node.http_method
+                }
+                for node in result.graph.nodes
+            ],
+            "edges": [
+                {
+                    "source": edge.source,
+                    "target": edge.target,
+                    "label": edge.label,
+                    "edge_type": edge.edge_type
+                }
+                for edge in result.graph.edges
+            ]
+        }
     }
 
-    # Store in Redis
-    await redis.set(
-        f"scan:status:{scan_id}",
-        json.dumps(scan_status),
-        ex=3600
-    )
 
-    # Publish to channel for WebSocket subscribers
-    await redis.publish(
-        f"scan:progress:{scan_id}",
-        json.dumps(scan_status)
-    )
+@router.get("/scan/{scan_id}/diagram")
+async def get_scan_diagram(
+    scan_id: str,
+    format: str = Query(default="mermaid", regex="^(mermaid|json|html)$")
+):
+    """Get workflow diagram in specified format"""
+    if scan_id not in SCAN_RESULTS:
+        raise HTTPException(status_code=404, detail="Scan results not found")
 
-    print(f"[{scan_id}] 📊 Status set to '{status}' - frontend can now see this")
+    result = SCAN_RESULTS[scan_id]
+
+    if format == "json":
+        return get_scan_results(scan_id)
+    elif format == "mermaid":
+        # Generate Mermaid diagram
+        nodes = result.graph.nodes
+        edges = result.graph.edges
+
+        lines = ["graph TD"]
+
+        # Add nodes with styling
+        for node in nodes:
+            node_id = node.id.replace("-", "_")
+            node_label = f"{node.type.value.upper()}: {node.name}"
+
+            # Color by type
+            if "database" in node.type.value:
+                color = "fill:#90EE90" if "read" in node.type.value else "fill:#FFA500"
+            elif "api" in node.type.value:
+                color = "fill:#87CEEB"
+            else:
+                color = "fill:#FFD700"
+
+            lines.append(f"    {node_id}[\"{node_label}\"]")
+            lines.append(f"    style {node_id} {color}")
+
+        # Add edges
+        for edge in edges:
+            source_id = edge.source.replace("-", "_")
+            target_id = edge.target.replace("-", "_")
+            label = edge.label or ""
+            lines.append(f"    {source_id} --> |{label}| {target_id}")
+
+        return {"diagram": "\n".join(lines), "format": "mermaid"}
+
+    elif format == "html":
+        # Return HTML with embedded visualization
+        raise HTTPException(status_code=501, detail="HTML format not yet implemented")
 
 
-@router.websocket("/ws/scan/{scan_id}")
-async def websocket_scan_progress(websocket: WebSocket, scan_id: str):
-    """WebSocket endpoint for real-time scan progress updates"""
-    await websocket.accept()
-    print(f"[{scan_id}] 🔌 WebSocket connected")
-
-    redis = await get_redis()
-
+async def run_scan(scan_id: str, request: ScanRequest):
+    """Background task to run the actual scan"""
     try:
-        # Send current status immediately
-        current_status = await redis.get(f"scan:status:{scan_id}")
-        if current_status:
-            await websocket.send_text(current_status)
-            print(f"[{scan_id}] 📤 Sent current status")
+        # Update status to initializing
+        SCAN_STATUS[scan_id]["status"] = "initializing"
+        SCAN_STATUS[scan_id]["message"] = "Initializing scanner..."
+        SCAN_STATUS[scan_id]["progress"] = 0.0
 
-        # Subscribe to progress updates
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(f"scan:progress:{scan_id}")
+        import re
 
-        print(f"[{scan_id}] 📡 Subscribed to Redis channel")
+        # Build configuration
+        config = {
+            'scanner': {
+                'include_extensions': request.file_extensions,
+                'exclude_dirs': ['node_modules', 'bin', 'obj', '.git', 'dist', 'build'],
+                'detect': {
+                    'database': request.detect_database,
+                    'api_calls': request.detect_api,
+                    'file_io': request.detect_files,
+                    'message_queues': request.detect_messages,
+                    'data_transforms': request.detect_transforms,
+                }
+            },
+            'output': {
+                'directory': f'/tmp/scan-results/{scan_id}',
+                'formats': ['json', 'html']
+            }
+        }
 
-        # Listen for updates
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                await websocket.send_text(message["data"])
-                print(f"[{scan_id}] 📤 Sent progress update")
+        # Import Redis publish function
+        from app.redis_client import publish_scan_update
 
-                # Check if scan is complete
-                data = json.loads(message["data"])
-                if data["status"] in ["completed", "error", "failed"]:
-                    print(f"[{scan_id}] ✅ Scan finished, closing WebSocket")
-                    break
+        # Progress callback
+        files_discovered = False
+        def update_progress(current, total, message):
+            nonlocal files_discovered
 
-        await pubsub.unsubscribe(f"scan:progress:{scan_id}")
-        await pubsub.close()
+            if total > 0:
+                progress = (current / total) * 100
+                SCAN_STATUS[scan_id]["progress"] = progress
+                SCAN_STATUS[scan_id]["files_scanned"] = current
+                SCAN_STATUS[scan_id]["total_files"] = total
 
-    except WebSocketDisconnect:
-        print(f"[{scan_id}] 🔌 WebSocket disconnected by client")
+                # Extract ETA from message if present (format: "ETA: 2m 15s")
+                eta_match = re.search(r'ETA:\s*([^\|]+)', message)
+                if eta_match:
+                    SCAN_STATUS[scan_id]["eta"] = eta_match.group(1).strip()
+
+                # Extract nodes count if present (format: "Nodes: 123")
+                nodes_match = re.search(r'Nodes:\s*(\d+)', message)
+                if nodes_match:
+                    SCAN_STATUS[scan_id]["nodes_found"] = int(nodes_match.group(1).replace(',', ''))
+
+                # Update status based on progress
+                if current == 0:
+                    if not files_discovered:
+                        SCAN_STATUS[scan_id]["status"] = "discovering"
+                        SCAN_STATUS[scan_id]["message"] = f"Discovering files... Found {total:,} files"
+                        files_discovered = True
+                    else:
+                        SCAN_STATUS[scan_id]["status"] = "scanning"
+                        SCAN_STATUS[scan_id]["message"] = "Starting scan..."
+                        SCAN_STATUS[scan_id]["eta"] = "Calculating..."
+                else:
+                    SCAN_STATUS[scan_id]["status"] = "scanning"
+                    # Use cleaner message format
+                    SCAN_STATUS[scan_id]["message"] = f"Scanning... {current:,}/{total:,} files"
+
+                # Publish update to Redis for WebSocket clients
+                publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+            else:
+                SCAN_STATUS[scan_id]["message"] = message
+                # Publish update to Redis
+                publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+        # Run scan
+        builder = WorkflowGraphBuilder(config)
+
+        # Update to discovering status
+        SCAN_STATUS[scan_id]["status"] = "discovering"
+        SCAN_STATUS[scan_id]["message"] = "Discovering files..."
+        SCAN_STATUS[scan_id]["progress"] = 0.0
+
+        print(f"[{scan_id}] 📊 Status set to 'discovering' - frontend can now see this")
+        print(f"[{scan_id}] 📊 Current SCAN_STATUS: {SCAN_STATUS[scan_id]}")
+
+        # Publish initial status to Redis
+        publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+        result = builder.build(request.repo_path, progress_callback=update_progress)
+
+        # Store results
+        SCAN_RESULTS[scan_id] = result
+
+        # Update final status
+        SCAN_STATUS[scan_id]["status"] = "completed"
+        SCAN_STATUS[scan_id]["progress"] = 100.0
+        SCAN_STATUS[scan_id]["message"] = "Scan completed successfully"
+        SCAN_STATUS[scan_id]["files_scanned"] = result.files_scanned
+        SCAN_STATUS[scan_id]["nodes_found"] = len(result.graph.nodes)
+        SCAN_STATUS[scan_id]["eta"] = "0m 0s"
+        SCAN_STATUS[scan_id]["total_files"] = result.files_scanned
+
+        # Publish completion status to Redis
+        publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+        print(f"[{scan_id}] ✅ Scan completed: {result.files_scanned} files, {len(result.graph.nodes)} nodes")
+
+        # Render outputs
+        renderer = WorkflowRenderer(config)
+        renderer.render(result)
+
     except Exception as e:
-        print(f"[{scan_id}] ❌ WebSocket error: {e}")
-    finally:
-        try:
-            await websocket.close()
-        except:
-            pass
-        print(f"[{scan_id}] 🔌 WebSocket closed")
+        SCAN_STATUS[scan_id]["status"] = "failed"
+        SCAN_STATUS[scan_id]["message"] = f"Scan failed: {str(e)}"
+        SCAN_STATUS[scan_id]["eta"] = None
+
+        # Publish error status to Redis
+        publish_scan_update(scan_id, SCAN_STATUS[scan_id])
+
+        print(f"[{scan_id}] ❌ Scan failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+@router.get("/repositories")
+async def list_repositories(
+    source: Optional[RepoSourceType] = None,
+    organization_id: Optional[str] = None
+):
+    """
+    List available repositories
+
+    - For local mode: List repositories in configured directory
+    - For cloud mode: List connected GitHub/GitLab/Bitbucket repos
+    """
+    if source == RepoSourceType.LOCAL:
+        # List local repositories (Docker mount point)
+        local_repos_path = os.getenv("LOCAL_REPOS_PATH", "/repos")
+        if os.path.exists(local_repos_path):
+            repos = [
+                {
+                    "name": d,
+                    "path": os.path.join(local_repos_path, d),
+                    "source": "local"
+                }
+                for d in os.listdir(local_repos_path)
+                if os.path.isdir(os.path.join(local_repos_path, d))
+            ]
+            return {"repositories": repos}
+        return {"repositories": []}
+
+    # Cloud repositories (GitHub, GitLab, Bitbucket)
+    # TODO: Implement OAuth integration with git providers
+    return {
+        "repositories": [],
+        "message": "Cloud repository integration coming soon"
+    }
+
+
+@router.get("/environment")
+async def get_environment():
+    """
+    Get current environment configuration
+
+    Returns whether running in production (cloud repos only) or local (both cloud and local repos)
+    """
+    environment = os.getenv("ENVIRONMENT", "development")
+    is_docker = os.path.exists("/.dockerenv")
+
+    return {
+        "environment": environment,
+        "is_docker": is_docker,
+        "supports_local_repos": is_docker or environment == "development",
+        "supports_cloud_repos": True,
+        "local_repos_path": os.getenv("LOCAL_REPOS_PATH", "/repos") if is_docker else None
+    }
