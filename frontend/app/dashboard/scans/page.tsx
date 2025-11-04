@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import DashboardNavbar from '@/app/components/DashboardNavbar'
+import PinataSpinner from '@/app/components/PinataSpinner'
 
 interface ScanListItem {
   scan_id: string
@@ -99,10 +101,12 @@ export default function ScansPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-gray-600 text-lg">Loading scans...</span>
+      <div className="min-h-screen bg-gray-50">
+        <DashboardNavbar />
+        <div className="p-6">
+          <div className="flex items-center justify-center h-64">
+            <PinataSpinner size="lg" message="Loading scans..." />
+          </div>
         </div>
       </div>
     )
@@ -110,23 +114,28 @@ export default function ScansPage() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-700 font-semibold">Failed to load scans</p>
-          <p className="text-red-600 text-sm mt-2">{error}</p>
-          <button
-            onClick={loadScans}
-            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-          >
-            Retry
-          </button>
+      <div className="min-h-screen bg-gray-50">
+        <DashboardNavbar />
+        <div className="p-6">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-red-700 font-semibold">Failed to load scans</p>
+            <p className="text-red-600 text-sm mt-2">{error}</p>
+            <button
+              onClick={loadScans}
+              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="p-6">
+    <div className="min-h-screen bg-gray-50">
+      <DashboardNavbar />
+      <div className="p-6">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Scan History</h1>
@@ -228,6 +237,7 @@ export default function ScansPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import MermaidDiagram from '../../../components/MermaidDiagram'
+import DashboardNavbar from '@/app/components/DashboardNavbar'
+import PinataSpinner from '@/app/components/PinataSpinner'
+
+// Lazy load MermaidDiagram for better performance
+const MermaidDiagram = lazy(() => import('../../../components/MermaidDiagram'))
 
 interface WorkflowNode {
   id: string
@@ -463,10 +467,12 @@ export default function ScanDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-gray-600 text-lg">Loading scan results...</span>
+      <div className="min-h-screen bg-gray-50">
+        <DashboardNavbar />
+        <div className="p-6">
+          <div className="flex items-center justify-center h-64">
+            <PinataSpinner size="lg" message="Loading scan results..." />
+          </div>
         </div>
       </div>
     )
@@ -474,23 +480,28 @@ export default function ScanDetailPage() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-700 font-semibold">Failed to load scan results</p>
-          <p className="text-red-600 text-sm mt-2">{error}</p>
-          <button
-            onClick={() => router.push('/dashboard/scans')}
-            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-          >
-            Back to Scans
-          </button>
+      <div className="min-h-screen bg-gray-50">
+        <DashboardNavbar />
+        <div className="p-6">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-red-700 font-semibold">Failed to load scan results</p>
+            <p className="text-red-600 text-sm mt-2">{error}</p>
+            <button
+              onClick={() => router.push('/dashboard/scans')}
+              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+            >
+              Back to Scans
+            </button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="p-6">
+    <div className="min-h-screen bg-gray-50">
+      <DashboardNavbar />
+      <div className="p-6">
       {/* Header */}
       <div className="mb-6">
         <button
@@ -539,6 +550,7 @@ export default function ScanDetailPage() {
         {activeTab === 'database' && renderDatabaseTab()}
         {activeTab === 'api' && renderApiTab()}
       </div>
+      </div>
     </div>
   )
 }
@@ -570,12 +582,20 @@ function WorkflowDiagram({ scanId, workflowId }: { scanId: string; workflowId: s
   }
 
   if (isLoading) {
-    return <div className="text-center py-8 text-gray-600">Loading diagram...</div>
+    return (
+      <div className="text-center py-8">
+        <PinataSpinner size="md" message="Loading diagram..." />
+      </div>
+    )
   }
 
   if (!diagram) {
     return <div className="text-center py-8 text-gray-600">Diagram not available</div>
   }
 
-  return <MermaidDiagram chart={diagram} className="bg-gray-50 p-4 rounded-lg" />
+  return (
+    <Suspense fallback={<PinataSpinner size="md" message="Rendering diagram..." />}>
+      <MermaidDiagram chart={diagram} className="bg-gray-50 p-4 rounded-lg" />
+    </Suspense>
+  )
 }
