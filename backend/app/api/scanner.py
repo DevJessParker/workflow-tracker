@@ -226,7 +226,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
                     'metadata': node.metadata,
                     'table_name': node.table_name,
                     'endpoint': node.endpoint,
-                    'method': node.method,
+                    'http_method': node.method,  # Changed from 'method' to match frontend
                 }
                 for node in result.graph.nodes
             ],
@@ -235,6 +235,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
                     'source': edge.source,
                     'target': edge.target,
                     'label': edge.label,
+                    'edge_type': edge.label,  # Added for frontend compatibility
                     'metadata': edge.metadata,
                 }
                 for edge in result.graph.edges
@@ -268,6 +269,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
                 for wf in workflows
             ],
             'scan_time_seconds': result.scan_time_seconds,
+            'scan_duration': result.scan_time_seconds,  # Alias for frontend compatibility
             'errors': result.errors,
         }
 
