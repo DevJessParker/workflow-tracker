@@ -560,14 +560,15 @@ export default function ScannerPage() {
 
                 {/* Progress Bar */}
                 <div className="mb-4">
-                  <div className="relative w-full h-3 overflow-visible">
+                  <div className="relative w-full overflow-visible" style={{ height: '10.8px' }}>
                     {/* Full rainbow background (hidden) */}
                     <div className="absolute inset-0 bg-gray-200 rounded-full shadow-inner"></div>
 
                     {/* Revealed rainbow as progress advances */}
                     <div
-                      className="absolute left-0 top-0 h-3 rounded-full transition-all duration-500 ease-out"
+                      className="absolute left-0 top-0 rounded-full transition-all duration-500 ease-out"
                       style={{
+                        height: '10.8px',
                         width: `${scanStatus.progress}%`,
                         background: 'linear-gradient(90deg, #E74C3C 0%, #E67E22 14.3%, #F1C40F 28.6%, #2ECC71 42.9%, #3498DB 57.1%, #6C3483 71.4%, #9B59B6 85.7%, #E91E63 100%)',
                         backgroundSize: `${100 / (scanStatus.progress || 1) * 100}% 100%`,
