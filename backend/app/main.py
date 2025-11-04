@@ -12,8 +12,8 @@ import redis.asyncio as aioredis
 # Import API routes
 from app.api.scanner import router as scanner_router
 
-# Import routers
-from app.routers import scanner, scanner_websocket
+# Import WebSocket router
+from app.routers import scanner_websocket
 
 # Create FastAPI app
 app = FastAPI(
@@ -24,10 +24,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Include API routers
-app.include_router(scanner_router)
-
-# CORS middleware
+# CORS middleware (must be before routers)
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 
 app.add_middleware(
@@ -39,8 +36,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(scanner.router)
-app.include_router(scanner_websocket.router)
+app.include_router(scanner_router)  # Main scanner API at /api/v1/scanner
+app.include_router(scanner_websocket.router)  # WebSocket at /ws/scan/{scan_id}
 
 
 @app.get("/")

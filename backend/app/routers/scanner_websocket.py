@@ -29,7 +29,7 @@ async def get_async_redis() -> aioredis.Redis:
     global _redis_client
 
     if _redis_client is None:
-        redis_url = os.getenv("REDIS_URL", "redis://pinata-redis:6379/0")
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
         _redis_client = await aioredis.from_url(
             redis_url,
             decode_responses=True,
