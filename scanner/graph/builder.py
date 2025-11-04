@@ -177,25 +177,40 @@ class WorkflowGraphBuilder:
         print("\n" + "="*60)
         print("ANALYZING API ROUTES")
         print("="*60)
-        if progress_callback:
-            progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing API routes and endpoints...")
-        self._analyze_api_routes(result.graph, progress_callback)
+        try:
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing API routes and endpoints...")
+            self._analyze_api_routes(result.graph, progress_callback)
+        except Exception as e:
+            error_msg = f"API routes analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            print(f"⚠️  WARNING: {error_msg}")
 
         # Pages and Components Analysis
         print("\n" + "="*60)
         print("ANALYZING PAGES AND COMPONENTS")
         print("="*60)
-        if progress_callback:
-            progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing UI pages and components...")
-        self._analyze_pages_and_components(result.graph, progress_callback)
+        try:
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing UI pages and components...")
+            self._analyze_pages_and_components(result.graph, progress_callback)
+        except Exception as e:
+            error_msg = f"Pages/components analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            print(f"⚠️  WARNING: {error_msg}")
 
         # Dependency Analysis
         print("\n" + "="*60)
         print("ANALYZING DEPENDENCIES")
         print("="*60)
-        if progress_callback:
-            progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing code dependencies...")
-        self._analyze_dependencies(result.graph, progress_callback)
+        try:
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing code dependencies...")
+            self._analyze_dependencies(result.graph, progress_callback)
+        except Exception as e:
+            error_msg = f"Dependency analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            print(f"⚠️  WARNING: {error_msg}")
 
         result.scan_time_seconds = time.time() - start_time
 
