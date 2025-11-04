@@ -272,7 +272,16 @@ async def run_scan(scan_id: str, request: ScanRequest):
         print(f"[{scan_id}] 💾 Analyzing database tables...")
         await update_analysis_step(2, "in_progress", 0)
         db_analyzer = DatabaseTableAnalyzer(result.graph, request.repo_path)
-        database_tables = db_analyzer.analyze()
+
+        # Progress callback for database analysis sub-steps
+        def db_progress(step, total_steps, message):
+            progress_pct = int((step / total_steps) * 100)
+            asyncio.run_coroutine_threadsafe(
+                update_analysis_step(2, "in_progress", progress_pct),
+                loop
+            )
+
+        database_tables = db_analyzer.analyze(progress_callback=db_progress)
         database_tables_dict = db_analyzer.to_dict()
         await update_analysis_step(2, "completed", 100)
 

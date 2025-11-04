@@ -63,31 +63,47 @@ class DatabaseTableAnalyzer:
         self.repository_path = repository_path
         self.tables: Dict[str, TableAnalysis] = {}
 
-    def analyze(self) -> Dict[str, TableAnalysis]:
-        """Perform complete database table analysis"""
+    def analyze(self, progress_callback=None) -> Dict[str, TableAnalysis]:
+        """Perform complete database table analysis
+
+        Args:
+            progress_callback: Optional callback function(step, total_steps, message) for progress updates
+        """
         print("\n" + "="*60)
         print("ANALYZING DATABASE TABLES")
         print("="*60)
 
+        total_steps = 5
+
         # Step 1: Count operations per table from workflow graph
         self._count_operations()
         print(f"✓ Counted operations for {len(self.tables)} tables")
+        if progress_callback:
+            progress_callback(1, total_steps, f"Counted operations for {len(self.tables)} tables")
 
         # Step 2: Find schema/model files for each table
         self._find_schema_files()
         print(f"✓ Found schema files")
+        if progress_callback:
+            progress_callback(2, total_steps, "Found schema files")
 
         # Step 3: Parse schema files to extract column information
         self._parse_schemas()
         print(f"✓ Parsed table schemas")
+        if progress_callback:
+            progress_callback(3, total_steps, "Parsed table schemas")
 
         # Step 4: Find and parse migration files
         self._find_migrations()
         print(f"✓ Found migration files")
+        if progress_callback:
+            progress_callback(4, total_steps, "Found migration files")
 
         # Step 5: Apply migrations to get current schema
         self._apply_migrations()
         print(f"✓ Applied migrations to schemas")
+        if progress_callback:
+            progress_callback(5, total_steps, "Applied migrations to schemas")
 
         print(f"✓ Analyzed {len(self.tables)} database tables")
         print("="*60 + "\n")
