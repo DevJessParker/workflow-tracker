@@ -451,6 +451,7 @@ async def publish_progress(
     # Add analysis steps if provided
     if analysis_steps is not None:
         scan_status["analysis_steps"] = analysis_steps
+        print(f"[{scan_id}] 📋 Including {len(analysis_steps)} analysis steps in progress update")
 
     # Store in Redis
     await redis.set(
@@ -466,6 +467,7 @@ async def publish_progress(
     )
 
     print(f"[{scan_id}] 📊 Status set to '{status}' - frontend can now see this")
+    print(f"[{scan_id}] 📤 Sent progress update: {status} - {progress}%")
 
 
 @router.websocket("/ws/scan/{scan_id}")

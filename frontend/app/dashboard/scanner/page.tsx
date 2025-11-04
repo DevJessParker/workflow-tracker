@@ -261,6 +261,7 @@ export default function ScannerPage() {
   // WebSocket callbacks wrapped in useCallback to prevent infinite reconnects
   const handleScanUpdate = useCallback((update) => {
     console.log('📊 WebSocket update received:', update)
+    console.log('🔍 Analysis steps in update:', update.analysis_steps)
 
     // Update scan status
     setScanStatus({
@@ -274,6 +275,8 @@ export default function ScannerPage() {
       total_files: update.total_files,
       analysis_steps: update.analysis_steps,
     })
+
+    console.log('✅ State updated with analysis_steps:', update.analysis_steps)
 
     // Handle completion
     if (update.status === 'completed') {
@@ -596,7 +599,11 @@ export default function ScannerPage() {
                 </div>
 
                 {/* Analysis Steps Progress */}
-                {scanStatus.status === 'analyzing' && scanStatus.analysis_steps && (
+                {(() => {
+                  console.log('🎨 Render check - status:', scanStatus.status, 'steps:', scanStatus.analysis_steps)
+                  return null
+                })()}
+                {scanStatus.status === 'analyzing' && scanStatus.analysis_steps && scanStatus.analysis_steps.length > 0 && (
                   <div className="mb-4 space-y-3">
                     <h3 className="text-sm font-semibold text-gray-700">Analysis Progress:</h3>
                     {scanStatus.analysis_steps.map((step, index) => (
