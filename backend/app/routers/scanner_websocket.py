@@ -8,10 +8,10 @@ from fastapi.websockets import WebSocketState
 import asyncio
 import json
 import logging
-from typing import Dict, Set
+import os
+from typing import Dict, Set, Optional
 from datetime import datetime
-
-from app.redis_client import redis_client
+import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,25 @@ router = APIRouter()
 
 # Track active WebSocket connections per scan
 active_connections: Dict[str, Set[WebSocket]] = {}
+
+# Async Redis client for WebSocket pub/sub
+_redis_client: Optional[aioredis.Redis] = None
+
+
+async def get_async_redis() -> aioredis.Redis:
+    """Get or create async Redis client for WebSocket pub/sub"""
+    global _redis_client
+
+    if _redis_client is None:
+        redis_url = os.getenv("REDIS_URL", "redis://pinata-redis:6379/0")
+        _redis_client = await aioredis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=5
+        )
+        logger.info(f"✅ Async Redis client initialized for WebSocket: {redis_url}")
+
+    return _redis_client
 
 
 class ConnectionManager:
@@ -87,13 +106,14 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
     """
     await manager.connect(websocket, scan_id)
 
-    # Create Redis pubsub client for this connection
-    pubsub = redis_client.pubsub()
+    # Get async Redis client
+    redis = await get_async_redis()
+    pubsub = redis.pubsub()
     channel = f"scan:{scan_id}"
 
     try:
         # Subscribe to Redis channel for this scan
-        pubsub.subscribe(channel)
+        await pubsub.subscribe(channel)
         logger.info(f"[{scan_id}] 📡 Subscribed to Redis channel: {channel}")
 
         # Send initial connection confirmation
@@ -107,41 +127,40 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
         # Listen for messages from Redis and forward to WebSocket
         async def listen_redis():
             """Listen for Redis pub/sub messages"""
-            while True:
-                try:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-
+            try:
+                async for message in pubsub.listen():
                     if message and message['type'] == 'message':
-                        # Parse the message data
-                        data = json.loads(message['data'])
+                        try:
+                            # Parse the message data
+                            data = json.loads(message['data'])
 
-                        # Add metadata
-                        data['type'] = 'scan_update'
-                        data['timestamp'] = datetime.utcnow().isoformat()
+                            # Add metadata
+                            data['type'] = 'scan_update'
+                            data['timestamp'] = datetime.utcnow().isoformat()
 
-                        # Send to WebSocket client
-                        success = await manager.send_message(websocket, data)
+                            # Send to WebSocket client
+                            success = await manager.send_message(websocket, data)
 
-                        if success:
-                            logger.debug(
-                                f"[{scan_id}] 📤 Sent update: "
-                                f"{data.get('status')} - {data.get('progress', 0):.1f}%"
-                            )
-
-                    # Small delay to prevent tight loop
-                    await asyncio.sleep(0.1)
-
-                except json.JSONDecodeError as e:
-                    logger.error(f"[{scan_id}] ❌ Invalid JSON from Redis: {e}")
-                except Exception as e:
-                    logger.error(f"[{scan_id}] ❌ Error in Redis listener: {e}")
-                    break
+                            if success:
+                                logger.debug(
+                                    f"[{scan_id}] 📤 Sent update: "
+                                    f"{data.get('status')} - {data.get('progress', 0):.1f}%"
+                                )
+                        except json.JSONDecodeError as e:
+                            logger.error(f"[{scan_id}] ❌ Invalid JSON from Redis: {e}")
+                        except Exception as e:
+                            logger.error(f"[{scan_id}] ❌ Error processing message: {e}")
+            except asyncio.CancelledError:
+                logger.info(f"[{scan_id}] 🛑 Redis listener cancelled")
+                raise
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Error in Redis listener: {e}")
 
         # Listen for client messages (for heartbeat/ping)
         async def listen_client():
             """Listen for client messages (ping/pong for keepalive)"""
-            while True:
-                try:
+            try:
+                while True:
                     message = await websocket.receive_text()
 
                     # Handle ping/pong for keepalive
@@ -152,19 +171,32 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
                         })
                         logger.debug(f"[{scan_id}] 🏓 Ping/pong")
 
-                except WebSocketDisconnect:
-                    logger.info(f"[{scan_id}] 🔌 Client disconnected")
-                    break
-                except Exception as e:
-                    logger.error(f"[{scan_id}] ❌ Error receiving message: {e}")
-                    break
+            except WebSocketDisconnect:
+                logger.info(f"[{scan_id}] 🔌 Client disconnected")
+                raise
+            except asyncio.CancelledError:
+                logger.info(f"[{scan_id}] 🛑 Client listener cancelled")
+                raise
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Error receiving message: {e}")
+                raise
 
         # Run both listeners concurrently
-        await asyncio.gather(
-            listen_redis(),
-            listen_client(),
-            return_exceptions=True
-        )
+        tasks = [
+            asyncio.create_task(listen_redis()),
+            asyncio.create_task(listen_client())
+        ]
+
+        # Wait for either task to complete/fail
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+        # Cancel remaining tasks
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     except WebSocketDisconnect:
         logger.info(f"[{scan_id}] 🔌 WebSocket disconnected normally")
@@ -184,8 +216,12 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
     finally:
         # Clean up
         manager.disconnect(websocket, scan_id)
-        pubsub.unsubscribe(channel)
-        pubsub.close()
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception as e:
+            logger.error(f"[{scan_id}] ⚠️  Error closing pubsub: {e}")
+
         logger.info(f"[{scan_id}] 🧹 Cleaned up WebSocket connection")
 
 
