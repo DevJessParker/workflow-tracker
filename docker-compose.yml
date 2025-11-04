@@ -49,6 +49,7 @@ services:
       - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
       - ENVIRONMENT=development
       - LOG_LEVEL=debug
+      - IS_DOCKER=true
       - LOCAL_REPOS_PATH=/repos  # Path inside container for local repos
     depends_on:
       db:
