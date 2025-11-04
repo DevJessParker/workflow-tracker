@@ -111,11 +111,27 @@ class WorkflowGraph:
 
 
 @dataclass
+class TableSchema:
+    """Represents a database table/entity schema."""
+    entity_name: str  # Class name (e.g., "User")
+    table_name: str   # Actual table name (e.g., "Users" or from [Table] attribute)
+    file_path: str
+    line_number: int
+    properties: List[str] = field(default_factory=list)  # Property names
+    dbset_name: Optional[str] = None  # DbSet property name (e.g., "Users" in _context.Users)
+    metadata: Dict[str, any] = field(default_factory=dict)
+
+    def __hash__(self):
+        return hash((self.entity_name, self.table_name))
+
+
+@dataclass
 class ScanResult:
     """Results from scanning a repository."""
     repository_path: str
     graph: WorkflowGraph
     files_scanned: int = 0
+    schemas_discovered: Dict[str, TableSchema] = field(default_factory=dict)  # Key: entity_name or table_name
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     scan_time_seconds: float = 0.0

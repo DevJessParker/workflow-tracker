@@ -74,6 +74,23 @@ class WorkflowGraphBuilder:
         # Notify callback of total files discovered
         if progress_callback:
             progress_callback(0, len(files_to_scan), f"Found {len(files_to_scan):,} files to scan")
+
+        # FIRST PASS: Discover database schemas/models
+        print("="*60)
+        print("DISCOVERING DATABASE SCHEMAS")
+        print("="*60)
+
+        if progress_callback:
+            progress_callback(0, len(files_to_scan), "Discovering database schemas...")
+
+        self._discover_schemas(files_to_scan, result, progress_callback)
+
+        print(f"✓ Found {len(result.schemas_discovered):,} database schemas\n")
+
+        if progress_callback:
+            progress_callback(0, len(files_to_scan), f"Schema discovery complete: {len(result.schemas_discovered):,} tables found")
+
+        # SECOND PASS: Scan files for workflow operations
         print("="*60)
         print("SCANNING FILES")
         print("="*60)
@@ -87,7 +104,8 @@ class WorkflowGraphBuilder:
                 scanner = self._get_scanner_for_file(file_path)
 
                 if scanner:
-                    file_graph = scanner.scan_file(file_path)
+                    # Pass schema registry to scanner for enhanced table name detection
+                    file_graph = scanner.scan_file(file_path, schema_registry=result.schemas_discovered)
                     # Merge file graph into result graph
                     self._merge_graphs(result.graph, file_graph)
                     result.files_scanned += 1
@@ -167,6 +185,49 @@ class WorkflowGraphBuilder:
             print(f"  Errors: {len(result.errors)}")
 
         return result
+
+    def _discover_schemas(self, files_to_scan: List[str], result, progress_callback=None):
+        """Discover database schemas/models in the codebase.
+
+        This performs a first pass to identify entity/model definitions
+        before scanning for workflow operations.
+
+        Args:
+            files_to_scan: List of files to check for schemas
+            result: ScanResult to store discovered schemas
+            progress_callback: Optional callback for progress updates
+        """
+        from scanner import CSharpScanner
+
+        # Only scan C# files for schema detection (can extend to TypeScript/etc later)
+        csharp_scanner = CSharpScanner(self.config.get('scanner', {}))
+        schemas_found = 0
+        files_checked = 0
+
+        for file_path in files_to_scan:
+            if file_path.endswith('.cs'):
+                try:
+                    schemas = csharp_scanner.detect_schemas(file_path)
+
+                    for schema in schemas:
+                        # Store by both entity name and table name for easy lookup
+                        result.schemas_discovered[schema.entity_name] = schema
+                        result.schemas_discovered[schema.table_name] = schema
+                        schemas_found += 1
+
+                    files_checked += 1
+
+                    # Send progress update every 100 files
+                    if progress_callback and files_checked % 100 == 0:
+                        progress_msg = f"Discovering schemas... ({files_checked} files checked, {len(result.schemas_discovered):,} schemas found)"
+                        progress_callback(0, len(files_to_scan), progress_msg)
+
+                except Exception as e:
+                    # Don't fail the entire scan if schema detection fails
+                    pass
+
+        print(f"  Checked {files_checked} C# files")
+        print(f"  Discovered {len(result.schemas_discovered)} unique schemas")
 
     def _find_files(self, root_path: str, include_extensions: List[str], exclude_dirs: List[str]) -> List[str]:
         """Find all files to scan in the repository.

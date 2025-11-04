@@ -65,7 +65,7 @@ class WPFScanner(BaseScanner):
         """Check if file is a WPF XAML or code-behind file."""
         return file_path.endswith(('.xaml', '.xaml.cs'))
 
-    def scan_file(self, file_path: str) -> WorkflowGraph:
+    def scan_file(self, file_path: str, schema_registry: dict = None) -> WorkflowGraph:
         """Scan WPF file for UI workflows."""
         self.graph = WorkflowGraph()
         content = self.read_file(file_path)

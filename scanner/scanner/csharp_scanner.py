@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .base import BaseScanner
 from models import (
-    WorkflowGraph, WorkflowNode, WorkflowEdge, WorkflowType, CodeLocation
+    WorkflowGraph, WorkflowNode, WorkflowEdge, WorkflowType, CodeLocation, TableSchema
 )
 
 
@@ -57,9 +57,15 @@ class CSharpScanner(BaseScanner):
         """Check if file is a C# file."""
         return file_path.endswith('.cs')
 
-    def scan_file(self, file_path: str) -> WorkflowGraph:
-        """Scan C# file for workflow patterns."""
+    def scan_file(self, file_path: str, schema_registry: dict = None) -> WorkflowGraph:
+        """Scan C# file for workflow patterns.
+
+        Args:
+            file_path: Path to the file to scan
+            schema_registry: Optional dictionary mapping table/entity names to TableSchema objects
+        """
         self.graph = WorkflowGraph()
+        self.schema_registry = schema_registry or {}
         content = self.read_file(file_path)
 
         # Scan for different workflow types
@@ -235,19 +241,34 @@ class CSharpScanner(BaseScanner):
                     break
 
     def _extract_table_name(self, line: str, all_lines: List[str], line_num: int) -> str:
-        """Extract table/entity name from EF query."""
-        # Look for DbSet<EntityName> or _context.EntityName
+        """Extract table/entity name from EF query.
+
+        Uses the schema registry when available to map entity names to actual table names.
+        """
+        entity_name = None
+
+        # Look for DbSet<EntityName> or _context.EntityName or _db.EntityName
         match = re.search(r'DbSet<(\w+)>|_context\.(\w+)|_db\.(\w+)', line)
         if match:
-            return match.group(1) or match.group(2) or match.group(3)
+            entity_name = match.group(1) or match.group(2) or match.group(3)
 
-        # Look backwards for context
-        for i in range(max(0, line_num - 5), line_num):
-            match = re.search(r'var\s+\w+\s*=\s*\w+\.(\w+)', all_lines[i])
-            if match:
-                return match.group(1)
+        # Look backwards for context if not found yet
+        if not entity_name:
+            for i in range(max(0, line_num - 5), line_num):
+                match = re.search(r'var\s+\w+\s*=\s*\w+\.(\w+)', all_lines[i])
+                if match:
+                    entity_name = match.group(1)
+                    break
 
-        return None
+        # If we found an entity name, try to resolve it to actual table name using schema registry
+        if entity_name and self.schema_registry:
+            schema = self.schema_registry.get(entity_name)
+            if schema:
+                # Return the actual table name from the schema
+                return schema.table_name
+
+        # Fallback to entity name if no schema found
+        return entity_name
 
     def _extract_sql_query(self, lines: List[str], line_num: int) -> str:
         """Extract SQL query string from code."""
@@ -303,3 +324,143 @@ class CSharpScanner(BaseScanner):
                 return match.group(1) or match.group(2)
 
         return None
+
+    def detect_schemas(self, file_path: str) -> List[TableSchema]:
+        """Detect database table/entity schemas in C# files.
+
+        This identifies:
+        - Entity Framework entity classes (POCOs)
+        - DbContext DbSet properties
+        - [Table] attributes
+
+        Args:
+            file_path: Path to the C# file
+
+        Returns:
+            List of TableSchema objects found in the file
+        """
+        schemas = []
+        content = self.read_file(file_path)
+        lines = content.split('\n')
+
+        # Detect DbContext and its DbSet properties
+        dbsets = self._detect_dbsets(file_path, lines)
+        schemas.extend(dbsets)
+
+        # Detect Entity classes (with [Table] attribute or typical entity patterns)
+        entities = self._detect_entity_classes(file_path, lines)
+        schemas.extend(entities)
+
+        return schemas
+
+    def _detect_dbsets(self, file_path: str, lines: List[str]) -> List[TableSchema]:
+        """Detect DbSet properties in DbContext classes."""
+        schemas = []
+        in_dbcontext = False
+
+        for i, line in enumerate(lines, 1):
+            # Detect DbContext class
+            if re.search(r'class\s+\w+\s*:\s*DbContext', line):
+                in_dbcontext = True
+                continue
+
+            # Look for DbSet<EntityName> PropertyName
+            if in_dbcontext:
+                dbset_match = re.search(r'DbSet<(\w+)>\s+(\w+)', line)
+                if dbset_match:
+                    entity_name = dbset_match.group(1)
+                    dbset_property = dbset_match.group(2)
+
+                    # Table name is typically the DbSet property name (pluralized)
+                    table_name = dbset_property
+
+                    schema = TableSchema(
+                        entity_name=entity_name,
+                        table_name=table_name,
+                        file_path=file_path,
+                        line_number=i,
+                        dbset_name=dbset_property,
+                        metadata={'source': 'DbContext', 'detected_from': 'DbSet'}
+                    )
+                    schemas.append(schema)
+
+            # Exit DbContext when we hit the closing brace (simplified)
+            if in_dbcontext and line.strip() == '}':
+                in_dbcontext = False
+
+        return schemas
+
+    def _detect_entity_classes(self, file_path: str, lines: List[str]) -> List[TableSchema]:
+        """Detect Entity Framework entity classes."""
+        schemas = []
+        current_class = None
+        current_line = 0
+        table_attribute = None
+        properties = []
+
+        for i, line in enumerate(lines, 1):
+            # Look for [Table("TableName")] attribute
+            table_match = re.search(r'\[Table\("([^"]+)"\)\]', line)
+            if table_match:
+                table_attribute = table_match.group(1)
+                continue
+
+            # Detect class definition
+            class_match = re.search(r'class\s+(\w+)', line)
+            if class_match:
+                # Save previous class if it looks like an entity
+                if current_class and self._looks_like_entity(properties):
+                    table_name = table_attribute or current_class  # Use attribute or class name
+                    schema = TableSchema(
+                        entity_name=current_class,
+                        table_name=table_name,
+                        file_path=file_path,
+                        line_number=current_line,
+                        properties=properties,
+                        metadata={'source': 'Entity', 'has_table_attribute': table_attribute is not None}
+                    )
+                    schemas.append(schema)
+
+                # Start tracking new class
+                current_class = class_match.group(1)
+                current_line = i
+                properties = []
+                table_attribute = None
+
+            # Detect properties (simplified: public Type PropName { get; set; })
+            if current_class:
+                prop_match = re.search(r'public\s+\w+\??(\[\])?\s+(\w+)\s*\{\s*get;', line)
+                if prop_match:
+                    prop_name = prop_match.group(2)
+                    properties.append(prop_name)
+
+        # Don't forget the last class
+        if current_class and self._looks_like_entity(properties):
+            table_name = table_attribute or current_class
+            schema = TableSchema(
+                entity_name=current_class,
+                table_name=table_name,
+                file_path=file_path,
+                line_number=current_line,
+                properties=properties,
+                metadata={'source': 'Entity', 'has_table_attribute': table_attribute is not None}
+            )
+            schemas.append(schema)
+
+        return schemas
+
+    def _looks_like_entity(self, properties: List[str]) -> bool:
+        """Heuristic to determine if a class looks like a database entity.
+
+        A class is likely an entity if it has:
+        - At least 2 properties
+        - Common entity property names like Id, Name, CreatedAt, etc.
+        """
+        if len(properties) < 2:
+            return False
+
+        # Check for common entity patterns
+        common_props = {'Id', 'ID', 'Name', 'CreatedAt', 'UpdatedAt', 'Created', 'Modified'}
+        has_common = any(prop in common_props for prop in properties)
+
+        return has_common or len(properties) >= 3
