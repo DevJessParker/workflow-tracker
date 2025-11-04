@@ -3,9 +3,10 @@ Pinata Code - FastAPI Backend
 Main application entry point
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 import os
 import redis.asyncio as aioredis
 
@@ -26,6 +27,22 @@ app = FastAPI(
 
 # Include API routers
 app.include_router(scanner_router)
+
+# Exception handler for validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Log validation errors for debugging"""
+    print(f"❌ Validation error on {request.method} {request.url.path}")
+    print(f"❌ Error details: {exc.errors()}")
+    try:
+        body = await request.body()
+        print(f"❌ Request body: {body.decode('utf-8')}")
+    except:
+        print(f"❌ Could not read request body")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()},
+    )
 
 # CORS middleware
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")

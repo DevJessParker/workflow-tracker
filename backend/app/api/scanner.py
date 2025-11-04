@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Request
+from pydantic import BaseModel, ValidationError
 
 router = APIRouter(prefix="/api/v1/scanner", tags=["scanner"])
 
@@ -79,12 +79,15 @@ async def get_repositories(source: str = "local"):
 
 
 @router.post("/scan", response_model=ScanResponse)
-async def start_scan(request: ScanRequest):
+async def start_scan(request: ScanRequest, raw_request: Request = None):
     """Start a code scan"""
     scan_id = str(uuid.uuid4())
 
-    # Log scan start
+    # Log scan start with request details
     print(f"[{scan_id}] ✅ Scan queued, starting background task...")
+    print(f"[{scan_id}] 📁 Repository: {request.repository_path}")
+    print(f"[{scan_id}] 📝 File types: {request.file_types}")
+    print(f"[{scan_id}] 🚫 Exclude patterns: {request.exclude_patterns}")
 
     # Initialize scan status in Redis
     redis = await get_redis()
