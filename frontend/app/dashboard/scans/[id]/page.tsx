@@ -67,7 +67,7 @@ interface ScanResults {
   errors: string[]
 }
 
-type TabType = 'overview' | 'workflows' | 'nodes' | 'database' | 'api' | 'tables' | 'components' | 'pages'
+type TabType = 'overview' | 'workflows' | 'nodes' | 'database' | 'api' | 'tables' | 'components' | 'pages' | 'dependencies'
 
 interface DatabaseTable {
   table_name: string
@@ -176,6 +176,52 @@ interface Page {
   database_queries_count: number
 }
 
+interface Dependency {
+  name: string
+  current_version: string
+  latest_version: string | null
+  package_file: string | null
+  package_manager: string | null
+  is_used: boolean
+  usage_count: number
+  used_in_files: string[]
+  is_outdated: boolean
+  versions_behind: number
+  major_update_available: boolean
+  minor_update_available: boolean
+  patch_update_available: boolean
+  is_dev_dependency: boolean
+  is_peer_dependency: boolean
+  has_security_warning: boolean
+  is_deprecated: boolean
+  has_conflict: boolean
+  conflict_details: string | null
+  description: string | null
+  license: string | null
+  last_published: string | null
+}
+
+interface DependencyConflict {
+  package_name: string
+  versions: string[]
+  locations: string[]
+  severity: string
+}
+
+interface DependencyMetrics {
+  total_dependencies: number
+  outdated_count: number
+  unused_count: number
+  security_warnings: number
+  deprecated_count: number
+  conflict_count: number
+  major_updates_available: number
+  minor_updates_available: number
+  patch_updates_available: number
+  avg_versions_behind: number
+  health_score: number
+}
+
 export default function ScanDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -198,6 +244,11 @@ export default function ScanDetailPage() {
   const [pages, setPages] = useState<Record<string, Page> | null>(null)
   const [loadingPages, setLoadingPages] = useState(false)
   const [pageSearchQuery, setPageSearchQuery] = useState('')
+  const [dependencies, setDependencies] = useState<Record<string, Dependency> | null>(null)
+  const [dependencyConflicts, setDependencyConflicts] = useState<DependencyConflict[] | null>(null)
+  const [dependencyMetrics, setDependencyMetrics] = useState<DependencyMetrics | null>(null)
+  const [loadingDependencies, setLoadingDependencies] = useState(false)
+  const [dependencySearchQuery, setDependencySearchQuery] = useState('')
 
   // Bookmark management for tables
   const {
@@ -350,6 +401,27 @@ export default function ScanDetailPage() {
     }
   }
 
+  const loadDependencies = async () => {
+    if (dependencies) return // Already loaded
+
+    try {
+      setLoadingDependencies(true)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/v1/scanner/scan/${scanId}/dependencies`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setDependencies(data.dependencies)
+        setDependencyConflicts(data.conflicts)
+        setDependencyMetrics(data.metrics)
+      }
+    } catch (err) {
+      console.error('Failed to load dependencies:', err)
+    } finally {
+      setLoadingDependencies(false)
+    }
+  }
+
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab)
     if (tab === 'tables') {
@@ -363,6 +435,9 @@ export default function ScanDetailPage() {
     }
     if (tab === 'pages') {
       loadPages()
+    }
+    if (tab === 'dependencies') {
+      loadDependencies()
     }
   }
 
@@ -1428,6 +1503,309 @@ export default function ScanDetailPage() {
     )
   }
 
+  const renderDependenciesTab = () => {
+    if (loadingDependencies) {
+      return (
+        <div className="flex justify-center py-12">
+          <PinataSpinner size="lg" message="Loading dependencies..." />
+        </div>
+      )
+    }
+
+    if (!dependencies || Object.keys(dependencies).length === 0) {
+      return (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">📦</div>
+          <p className="text-gray-600">No dependencies detected in this scan</p>
+        </div>
+      )
+    }
+
+    // Filter by search
+    const filteredDeps = Object.entries(dependencies).filter(([key, dep]) => {
+      if (!dependencySearchQuery) return true
+      const searchLower = dependencySearchQuery.toLowerCase()
+      return (
+        dep.name.toLowerCase().includes(searchLower) ||
+        (dep.package_manager && dep.package_manager.toLowerCase().includes(searchLower))
+      )
+    })
+
+    // Sort: unused > outdated > security > alphabetical
+    const sortedDeps = [...filteredDeps].sort(([, depA], [, depB]) => {
+      // Prioritize issues
+      if (!depA.is_used && depB.is_used) return -1
+      if (depA.is_used && !depB.is_used) return 1
+
+      if (depA.has_security_warning && !depB.has_security_warning) return -1
+      if (!depA.has_security_warning && depB.has_security_warning) return 1
+
+      if (depA.is_outdated && !depB.is_outdated) return -1
+      if (!depA.is_outdated && depB.is_outdated) return 1
+
+      return depA.name.localeCompare(depB.name)
+    })
+
+    const getHealthColor = (score: number) => {
+      if (score >= 80) return 'text-green-600'
+      if (score >= 60) return 'text-yellow-600'
+      if (score >= 40) return 'text-orange-600'
+      return 'text-red-600'
+    }
+
+    const getVersionColor = (dep: Dependency) => {
+      if (dep.has_security_warning) return 'text-red-600'
+      if (dep.major_update_available) return 'text-red-600'
+      if (dep.minor_update_available) return 'text-yellow-600'
+      if (dep.patch_update_available) return 'text-blue-600'
+      return 'text-green-600'
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Metrics Dashboard */}
+        {dependencyMetrics && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Dependency Health</h3>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-600">Health Score:</span>
+                <span className={`text-3xl font-bold ${getHealthColor(dependencyMetrics.health_score)}`}>
+                  {dependencyMetrics.health_score.toFixed(0)}
+                </span>
+                <span className="text-sm text-gray-600">/100</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              <div className="text-center p-3 bg-gray-50 rounded">
+                <div className="text-2xl font-bold text-gray-900">{dependencyMetrics.total_dependencies}</div>
+                <div className="text-xs text-gray-600">Total</div>
+              </div>
+              <div className="text-center p-3 bg-yellow-50 rounded">
+                <div className="text-2xl font-bold text-yellow-600">{dependencyMetrics.outdated_count}</div>
+                <div className="text-xs text-gray-600">Outdated</div>
+              </div>
+              <div className="text-center p-3 bg-blue-50 rounded">
+                <div className="text-2xl font-bold text-blue-600">{dependencyMetrics.unused_count}</div>
+                <div className="text-xs text-gray-600">Unused</div>
+              </div>
+              <div className="text-center p-3 bg-red-50 rounded">
+                <div className="text-2xl font-bold text-red-600">{dependencyMetrics.security_warnings}</div>
+                <div className="text-xs text-gray-600">Security</div>
+              </div>
+              <div className="text-center p-3 bg-orange-50 rounded">
+                <div className="text-2xl font-bold text-orange-600">{dependencyMetrics.conflict_count}</div>
+                <div className="text-xs text-gray-600">Conflicts</div>
+              </div>
+              <div className="text-center p-3 bg-purple-50 rounded">
+                <div className="text-2xl font-bold text-purple-600">{dependencyMetrics.deprecated_count}</div>
+                <div className="text-xs text-gray-600">Deprecated</div>
+              </div>
+            </div>
+
+            {/* Update breakdown */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Available Updates:</span>
+                <div className="flex space-x-4">
+                  <span className="text-red-600">{dependencyMetrics.major_updates_available} major</span>
+                  <span className="text-yellow-600">{dependencyMetrics.minor_updates_available} minor</span>
+                  <span className="text-blue-600">{dependencyMetrics.patch_updates_available} patch</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Conflicts Alert */}
+        {dependencyConflicts && dependencyConflicts.length > 0 && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <span className="text-red-600 text-xl">⚠️</span>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">Dependency Conflicts Detected</h3>
+                <div className="mt-2 space-y-2">
+                  {dependencyConflicts.map((conflict, idx) => (
+                    <div key={idx} className="text-sm text-red-700">
+                      <strong>{conflict.package_name}</strong>: Multiple versions found ({conflict.versions.join(', ')})
+                      <div className="text-xs text-red-600 mt-1">
+                        Locations: {conflict.locations.join(', ')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search dependencies..."
+              value={dependencySearchQuery}
+              onChange={(e) => setDependencySearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {dependencySearchQuery && (
+          <div className="text-sm text-gray-600">
+            Found {sortedDeps.length} of {Object.keys(dependencies).length} dependencies
+          </div>
+        )}
+
+        {/* Dependencies List */}
+        {sortedDeps.map(([key, dep]) => (
+          <div key={key} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 flex-wrap">
+                    <h3 className="text-xl font-mono font-bold text-gray-900">{dep.name}</h3>
+                    <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded font-mono">{dep.package_manager}</span>
+
+                    {!dep.is_used && !dep.is_dev_dependency && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded font-medium">🔵 Unused</span>
+                    )}
+
+                    {dep.is_dev_dependency && (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded font-medium">🛠️ Dev</span>
+                    )}
+
+                    {dep.has_security_warning && (
+                      <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded font-medium">🚨 Security</span>
+                    )}
+
+                    {dep.is_deprecated && (
+                      <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded font-medium">⚠️ Deprecated</span>
+                    )}
+
+                    {dep.has_conflict && (
+                      <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded font-medium">❗ Conflict</span>
+                    )}
+
+                    {dep.is_outdated && !dep.has_security_warning && (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded font-medium">📅 Outdated</span>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-gray-600 mt-2">
+                    📄 {dep.package_file}
+                  </p>
+
+                  {dep.description && (
+                    <p className="text-sm text-gray-700 mt-1">{dep.description}</p>
+                  )}
+                </div>
+
+                {/* Version Info */}
+                <div className="flex space-x-6 text-center">
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Current</div>
+                    <div className="text-lg font-semibold font-mono text-gray-900">{dep.current_version}</div>
+                  </div>
+                  {dep.latest_version && (
+                    <>
+                      <div className="flex items-center">
+                        <span className="text-gray-400">→</span>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-600 mb-1">Latest</div>
+                        <div className={`text-lg font-semibold font-mono ${getVersionColor(dep)}`}>
+                          {dep.latest_version}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Details */}
+            <div className="p-6 space-y-4">
+              {/* Usage Information */}
+              {dep.is_used && dep.used_in_files.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Used In ({dep.usage_count} files)</h4>
+                  <div className="bg-green-50 rounded p-3 max-h-32 overflow-y-auto">
+                    <div className="space-y-1">
+                      {dep.used_in_files.slice(0, 10).map((file, idx) => (
+                        <div key={idx} className="text-sm text-gray-700 font-mono">{file}</div>
+                      ))}
+                      {dep.used_in_files.length > 10 && (
+                        <div className="text-sm text-gray-500 italic">... and {dep.used_in_files.length - 10} more</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Version Analysis */}
+              {dep.is_outdated && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Update Available</h4>
+                  <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3">
+                    <div className="flex items-start space-x-2">
+                      <span className="text-yellow-600">📈</span>
+                      <div className="text-sm text-yellow-800">
+                        <strong>
+                          {dep.major_update_available && 'Major '}
+                          {dep.minor_update_available && 'Minor '}
+                          {dep.patch_update_available && 'Patch '}
+                          update available
+                        </strong>
+                        {dep.versions_behind > 0 && (
+                          <span> - {dep.versions_behind} version{dep.versions_behind > 1 ? 's' : ''} behind</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Conflict Details */}
+              {dep.has_conflict && dep.conflict_details && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Conflict Details</h4>
+                  <div className="bg-red-50 border-l-4 border-red-400 p-3">
+                    <p className="text-sm text-red-800">{dep.conflict_details}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Metadata */}
+              {(dep.license || dep.last_published) && (
+                <div className="flex items-center space-x-6 text-sm text-gray-600 border-t border-gray-200 pt-3">
+                  {dep.license && (
+                    <div>
+                      <span className="font-medium">License:</span> {dep.license}
+                    </div>
+                  )}
+                  {dep.last_published && (
+                    <div>
+                      <span className="font-medium">Last Published:</span> {dep.last_published}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   const renderTablesTab = () => {
     if (loadingTables) {
       return (
@@ -1799,6 +2177,7 @@ export default function ScanDetailPage() {
             { id: 'pages', label: 'Pages', icon: '📄' },
             { id: 'tables', label: 'Database Tables', icon: '🗄️' },
             { id: 'api', label: 'API Endpoints', icon: '🌐' },
+            { id: 'dependencies', label: 'Dependencies', icon: '📦' },
             { id: 'nodes', label: 'All Nodes', icon: '🔍' },
             { id: 'database', label: 'Database', icon: '💾' },
           ].map((tab) => (
@@ -1826,6 +2205,7 @@ export default function ScanDetailPage() {
         {activeTab === 'pages' && renderPagesTab()}
         {activeTab === 'tables' && renderTablesTab()}
         {activeTab === 'api' && renderApiTab()}
+        {activeTab === 'dependencies' && renderDependenciesTab()}
         {activeTab === 'nodes' && renderNodesTab()}
         {activeTab === 'database' && renderDatabaseTab()}
       </div>

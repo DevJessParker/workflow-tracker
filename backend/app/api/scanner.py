@@ -25,6 +25,7 @@ from workflow_analyzer import WorkflowAnalyzer
 from database_analyzer import DatabaseTableAnalyzer
 from api_analyzer import APIRoutesAnalyzer
 from component_analyzer import ComponentPageAnalyzer
+from dependency_analyzer import DependencyAnalyzer
 
 # Import backend services
 from app.models.scan import ScanMetadata, ScanListResponse, UnviewedCountResponse
@@ -247,6 +248,12 @@ async def run_scan(scan_id: str, request: ScanRequest):
         components, pages = component_analyzer.analyze()
         components_pages_dict = component_analyzer.to_dict()
 
+        # Analyze dependencies
+        print(f"[{scan_id}] 📦 Analyzing dependencies...")
+        dependency_analyzer = DependencyAnalyzer(request.repo_path)
+        dependencies = dependency_analyzer.analyze()
+        dependencies_dict = dependency_analyzer.to_dict()
+
         # Save results to disk
         output_dir = Path(f'/tmp/scans/{scan_id}')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -315,6 +322,9 @@ async def run_scan(scan_id: str, request: ScanRequest):
             'api_routes': api_routes_dict,
             'components': components_pages_dict['components'],
             'pages': components_pages_dict['pages'],
+            'dependencies': dependencies_dict['dependencies'],
+            'dependency_conflicts': dependencies_dict['conflicts'],
+            'dependency_metrics': dependencies_dict['metrics'],
             'scan_time_seconds': result.scan_time_seconds,
             'scan_duration': result.scan_time_seconds,  # Alias for frontend compatibility
             'errors': result.errors,
@@ -328,6 +338,8 @@ async def run_scan(scan_id: str, request: ScanRequest):
         print(f"[{scan_id}] ✅ Analyzed {len(api_routes_dict)} API routes")
         print(f"[{scan_id}] ✅ Analyzed {len(components_pages_dict['components'])} components")
         print(f"[{scan_id}] ✅ Analyzed {len(components_pages_dict['pages'])} pages")
+        print(f"[{scan_id}] ✅ Analyzed {len(dependencies_dict['dependencies'])} dependencies")
+        print(f"[{scan_id}] ⚠️  Found {len(dependencies_dict['conflicts'])} conflicts, {dependencies_dict['metrics']['unused_count']} unused")
 
         # Complete scan
         await publish_progress(
@@ -771,4 +783,28 @@ async def get_pages(scan_id: str):
         'scan_id': scan_id,
         'pages': pages,
         'page_count': len(pages)
+    }
+
+
+@router.get("/scan/{scan_id}/dependencies")
+async def get_dependencies(scan_id: str):
+    """Get dependencies analysis for a scan"""
+    results_file = Path(f'/tmp/scans/{scan_id}/results.json')
+
+    if not results_file.exists():
+        raise HTTPException(status_code=404, detail="Scan results not found")
+
+    with open(results_file, 'r') as f:
+        results = json.load(f)
+
+    dependencies = results.get('dependencies', {})
+    conflicts = results.get('dependency_conflicts', [])
+    metrics = results.get('dependency_metrics', {})
+
+    return {
+        'scan_id': scan_id,
+        'dependencies': dependencies,
+        'conflicts': conflicts,
+        'metrics': metrics,
+        'dependency_count': len(dependencies)
     }
