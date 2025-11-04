@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useScanWebSocket, ConnectionStatus } from '../../hooks/useScanWebSocket'
+import ConfettiExplosion from '../../components/ConfettiExplosion'
 
 interface ScanConfig {
   repoPath: string
@@ -110,6 +111,7 @@ export default function ScannerPage() {
   const [scanResults, setScanResults] = useState<ScanResults | null>(null)
   const [diagram, setDiagram] = useState<string | null>(null)
   const [wsConnectionStatus, setWsConnectionStatus] = useState<ConnectionStatus>('disconnected')
+  const [showConfetti, setShowConfetti] = useState(false)
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://')
@@ -268,10 +270,12 @@ export default function ScannerPage() {
     if (update.status === 'completed') {
       console.log('✅ Scan completed!')
       setScanning(false)
-      // Redirect to scans page to view results
+      // Show confetti explosion
+      setShowConfetti(true)
+      // Redirect to scans page to view results after confetti
       setTimeout(() => {
         router.push('/dashboard/scans')
-      }, 1500) // Brief delay to show completion state
+      }, 2500) // Delay for confetti animation
     } else if (update.status === 'failed') {
       console.error('❌ Scan failed:', update.message)
       setScanning(false)
@@ -308,6 +312,9 @@ export default function ScannerPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Confetti explosion on scan completion */}
+      {showConfetti && <ConfettiExplosion />}
+
       {/* Navigation */}
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -562,9 +569,10 @@ export default function ScannerPage() {
                       {/* Pinata at the tip of progress bar */}
                       {scanStatus.progress > 2 && (
                         <div
-                          className="absolute -right-3 -top-3 transition-all duration-500"
+                          className="absolute -right-3 transition-all duration-500"
                           style={{
-                            transform: 'scaleX(-1)',  // Flip horizontally to face right
+                            top: '50%',
+                            transform: 'translateY(-50%) scaleX(-1)',  // Center vertically and flip horizontally
                             fontSize: '2.15625rem'  // 15% larger than text-3xl (34.5px)
                           }}
                         >
