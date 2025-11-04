@@ -51,13 +51,13 @@ pinata-code/
 
 **Then follow:** The **[12-week implementation plan](docs/IMPLEMENTATION_PLAN.md)** for the complete roadmap.
 
-### For Using the Legacy Standalone Tool
+### For Using the Scanner
 
-The original Streamlit-based workflow analysis tool still works! See **[scanner/README.md](scanner/README.md)** for:
-- Running the Streamlit GUI
-- Scanning repositories
-- Generating workflow visualizations
-- Publishing to Confluence
+The workflow scanner is now fully integrated into the web application! See **[SCANNER_INTEGRATION.md](SCANNER_INTEGRATION.md)** for:
+- Accessing the scanner at `/dashboard/scanner`
+- Scanning local and cloud repositories
+- Viewing real-time workflow visualizations
+- Exporting Mermaid diagrams
 
 ---
 
@@ -105,9 +105,9 @@ pinata-code/
 │   │   └── tasks/       # Celery jobs
 │   └── tests/           # Test suite
 ├── scanner/              # Python scanning engine
-│   ├── cli/             # CLI & Streamlit GUI (legacy)
 │   ├── scanner/         # Core scanning logic
 │   ├── graph/           # Visualization generation
+│   ├── deprecated/      # Archived Streamlit app
 │   └── integrations/    # Confluence, etc.
 ├── infrastructure/       # Docker & deployment
 │   └── docker/          # docker-compose.yml
@@ -148,12 +148,13 @@ pinata-code/
 ## 📚 Documentation
 
 - **[QUICKSTART.md](QUICKSTART.md)** - Get started in 60 seconds with Docker Compose
+- **[SCANNER_INTEGRATION.md](SCANNER_INTEGRATION.md)** - How to use the integrated scanner
 - **[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)** - 12-week development roadmap
 - **[docs/REVENUE_STRATEGY.md](docs/REVENUE_STRATEGY.md)** - Business model & pricing
 - **[docs/ARCHITECTURE_SCALABLE_SAAS.md](docs/ARCHITECTURE_SCALABLE_SAAS.md)** - Technical architecture
 - **[backend/README.md](backend/README.md)** - Backend development guide
 - **[frontend/README.md](frontend/README.md)** - Frontend development guide
-- **[scanner/README.md](scanner/README.md)** - Scanning engine & legacy tool
+- **[scanner/README.md](scanner/README.md)** - Scanning engine details
 - **[infrastructure/README.md](infrastructure/README.md)** - Docker & deployment
 
 ---

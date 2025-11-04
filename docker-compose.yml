@@ -34,6 +34,7 @@ services:
       - ./backend:/app
       - ./scanner:/scanner
       - scan-results:/tmp/scan-results
+      - ${LOCAL_REPOS_PATH:-./repos}:/repos:ro  # Mount local repos for scanning
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/pinata_dev
@@ -48,6 +49,7 @@ services:
       - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
       - ENVIRONMENT=development
       - LOG_LEVEL=debug
+      - LOCAL_REPOS_PATH=/repos  # Path inside container for local repos
     depends_on:
       db:
         condition: service_healthy
