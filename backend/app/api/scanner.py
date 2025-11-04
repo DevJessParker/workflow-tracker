@@ -225,54 +225,64 @@ async def run_scan(scan_id: str, request: ScanRequest):
         # Execute in thread pool
         result: ScannerScanResult = await loop.run_in_executor(None, run_scanner)
 
+        # Initialize analysis steps
+        analysis_steps = [
+            {"name": "Inferring Workflow Edges", "status": "completed", "progress": 100, "icon": "🔗"},
+            {"name": "Analyzing UI Workflows", "status": "pending", "progress": 0, "icon": "🔍"},
+            {"name": "Analyzing Database Tables", "status": "pending", "progress": 0, "icon": "💾"},
+            {"name": "Analyzing API Routes", "status": "pending", "progress": 0, "icon": "🌐"},
+            {"name": "Analyzing Components & Pages", "status": "pending", "progress": 0, "icon": "🧩"},
+            {"name": "Analyzing Dependencies", "status": "pending", "progress": 0, "icon": "📦"},
+        ]
+
+        # Helper function to update analysis step progress
+        async def update_analysis_step(step_index: int, status: str, progress: int):
+            analysis_steps[step_index]["status"] = status
+            analysis_steps[step_index]["progress"] = progress
+            overall_progress = sum(step["progress"] for step in analysis_steps) / len(analysis_steps)
+            await publish_progress(
+                redis, scan_id, "analyzing", 100.0, f"{analysis_steps[step_index]['icon']} {analysis_steps[step_index]['name']}...",
+                result.files_scanned, len(result.graph.nodes), total_files_estimate, analysis_steps
+            )
+
         # Analyze UI workflows
         print(f"[{scan_id}] 🔍 Analyzing UI workflows...")
-        await publish_progress(
-            redis, scan_id, "analyzing", 100.0, "Analyzing UI workflows...",
-            result.files_scanned, len(result.graph.nodes), total_files_estimate
-        )
+        await update_analysis_step(1, "in_progress", 0)
         analyzer = WorkflowAnalyzer(result.graph)
         workflows = analyzer.analyze()
+        await update_analysis_step(1, "completed", 100)
 
         # Analyze database tables
         print(f"[{scan_id}] 💾 Analyzing database tables...")
-        await publish_progress(
-            redis, scan_id, "analyzing", 100.0, "Analyzing database tables...",
-            result.files_scanned, len(result.graph.nodes), total_files_estimate
-        )
+        await update_analysis_step(2, "in_progress", 0)
         db_analyzer = DatabaseTableAnalyzer(result.graph, request.repo_path)
         database_tables = db_analyzer.analyze()
         database_tables_dict = db_analyzer.to_dict()
+        await update_analysis_step(2, "completed", 100)
 
         # Analyze API routes
         print(f"[{scan_id}] 🌐 Analyzing API routes...")
-        await publish_progress(
-            redis, scan_id, "analyzing", 100.0, "Analyzing API routes...",
-            result.files_scanned, len(result.graph.nodes), total_files_estimate
-        )
+        await update_analysis_step(3, "in_progress", 0)
         api_analyzer = APIRoutesAnalyzer(result.graph, request.repo_path)
         api_routes = api_analyzer.analyze()
         api_routes_dict = api_analyzer.to_dict()
+        await update_analysis_step(3, "completed", 100)
 
         # Analyze components and pages
         print(f"[{scan_id}] 🧩 Analyzing components and pages...")
-        await publish_progress(
-            redis, scan_id, "analyzing", 100.0, "Analyzing components and pages...",
-            result.files_scanned, len(result.graph.nodes), total_files_estimate
-        )
+        await update_analysis_step(4, "in_progress", 0)
         component_analyzer = ComponentPageAnalyzer(result.graph, request.repo_path)
         components, pages = component_analyzer.analyze()
         components_pages_dict = component_analyzer.to_dict()
+        await update_analysis_step(4, "completed", 100)
 
         # Analyze dependencies
         print(f"[{scan_id}] 📦 Analyzing dependencies...")
-        await publish_progress(
-            redis, scan_id, "analyzing", 100.0, "Analyzing dependencies...",
-            result.files_scanned, len(result.graph.nodes), total_files_estimate
-        )
+        await update_analysis_step(5, "in_progress", 0)
         dependency_analyzer = DependencyAnalyzer(request.repo_path)
         dependencies = dependency_analyzer.analyze()
         dependencies_dict = dependency_analyzer.to_dict()
+        await update_analysis_step(5, "completed", 100)
 
         # Save results to disk
         output_dir = Path(f'/tmp/scans/{scan_id}')
@@ -408,6 +418,7 @@ async def publish_progress(
     files_scanned: int,
     nodes_found: int,
     total_files: int = None,
+    analysis_steps: List[Dict] = None,
 ):
     """Publish scan progress to Redis"""
     scan_status = {
@@ -420,6 +431,10 @@ async def publish_progress(
         "eta": None,
         "total_files": total_files,
     }
+
+    # Add analysis steps if provided
+    if analysis_steps is not None:
+        scan_status["analysis_steps"] = analysis_steps
 
     # Store in Redis
     await redis.set(

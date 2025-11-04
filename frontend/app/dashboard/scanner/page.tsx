@@ -17,6 +17,13 @@ interface ScanConfig {
   detectTransforms: boolean
 }
 
+interface AnalysisStep {
+  name: string
+  status: 'pending' | 'in_progress' | 'completed'
+  progress: number
+  icon: string
+}
+
 interface ScanStatus {
   scan_id: string
   status: string
@@ -26,6 +33,7 @@ interface ScanStatus {
   nodes_found: number
   eta?: string
   total_files?: number
+  analysis_steps?: AnalysisStep[]
 }
 
 interface WorkflowNode {
@@ -584,6 +592,46 @@ export default function ScannerPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Analysis Steps Progress */}
+                {scanStatus.status === 'analyzing' && scanStatus.analysis_steps && (
+                  <div className="mb-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700">Analysis Progress:</h3>
+                    {scanStatus.analysis_steps.map((step, index) => (
+                      <div key={index} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-lg">{step.icon}</span>
+                            <span className={`text-sm font-medium ${
+                              step.status === 'completed' ? 'text-green-600' :
+                              step.status === 'in_progress' ? 'text-blue-600' :
+                              'text-gray-500'
+                            }`}>
+                              {step.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            {step.status === 'completed' && <span className="text-green-500">✓</span>}
+                            {step.status === 'in_progress' && (
+                              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            )}
+                            <span className="text-xs text-gray-500">{step.progress}%</span>
+                          </div>
+                        </div>
+                        <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`absolute left-0 top-0 h-2 rounded-full transition-all duration-500 ${
+                              step.status === 'completed' ? 'bg-green-500' :
+                              step.status === 'in_progress' ? 'bg-gradient-to-r from-blue-400 to-blue-600' :
+                              'bg-gray-300'
+                            }`}
+                            style={{ width: `${step.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
