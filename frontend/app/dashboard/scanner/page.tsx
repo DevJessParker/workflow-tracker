@@ -531,6 +531,7 @@ export default function ScannerPage() {
                         {scanStatus.status === 'initializing' && 'Initializing...'}
                         {scanStatus.status === 'discovering' && 'Discovering Files...'}
                         {scanStatus.status === 'scanning' && 'Scanning Your Code...'}
+                        {scanStatus.status === 'analyzing' && 'Analyzing Results...'}
                         {scanStatus.status === 'queued' && 'Queued...'}
                         {scanStatus.status === 'starting' && 'Starting...'}
                       </h2>

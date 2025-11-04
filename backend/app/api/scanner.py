@@ -227,29 +227,49 @@ async def run_scan(scan_id: str, request: ScanRequest):
 
         # Analyze UI workflows
         print(f"[{scan_id}] 🔍 Analyzing UI workflows...")
+        await publish_progress(
+            redis, scan_id, "analyzing", 100.0, "Analyzing UI workflows...",
+            result.files_scanned, len(result.graph.nodes), total_files_estimate
+        )
         analyzer = WorkflowAnalyzer(result.graph)
         workflows = analyzer.analyze()
 
         # Analyze database tables
         print(f"[{scan_id}] 💾 Analyzing database tables...")
+        await publish_progress(
+            redis, scan_id, "analyzing", 100.0, "Analyzing database tables...",
+            result.files_scanned, len(result.graph.nodes), total_files_estimate
+        )
         db_analyzer = DatabaseTableAnalyzer(result.graph, request.repo_path)
         database_tables = db_analyzer.analyze()
         database_tables_dict = db_analyzer.to_dict()
 
         # Analyze API routes
         print(f"[{scan_id}] 🌐 Analyzing API routes...")
+        await publish_progress(
+            redis, scan_id, "analyzing", 100.0, "Analyzing API routes...",
+            result.files_scanned, len(result.graph.nodes), total_files_estimate
+        )
         api_analyzer = APIRoutesAnalyzer(result.graph, request.repo_path)
         api_routes = api_analyzer.analyze()
         api_routes_dict = api_analyzer.to_dict()
 
         # Analyze components and pages
         print(f"[{scan_id}] 🧩 Analyzing components and pages...")
+        await publish_progress(
+            redis, scan_id, "analyzing", 100.0, "Analyzing components and pages...",
+            result.files_scanned, len(result.graph.nodes), total_files_estimate
+        )
         component_analyzer = ComponentPageAnalyzer(result.graph, request.repo_path)
         components, pages = component_analyzer.analyze()
         components_pages_dict = component_analyzer.to_dict()
 
         # Analyze dependencies
         print(f"[{scan_id}] 📦 Analyzing dependencies...")
+        await publish_progress(
+            redis, scan_id, "analyzing", 100.0, "Analyzing dependencies...",
+            result.files_scanned, len(result.graph.nodes), total_files_estimate
+        )
         dependency_analyzer = DependencyAnalyzer(request.repo_path)
         dependencies = dependency_analyzer.analyze()
         dependencies_dict = dependency_analyzer.to_dict()
