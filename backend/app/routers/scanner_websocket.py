@@ -106,37 +106,41 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
 
         # Listen for messages from Redis and forward to WebSocket
         async def listen_redis():
-            """Listen for Redis pub/sub messages"""
-            while True:
-                try:
-                    # Use async get_message with timeout
-                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            """Listen for Redis pub/sub messages using async iterator"""
+            try:
+                # Use async for to listen for messages
+                async for message in pubsub.listen():
+                    # Skip subscription confirmation messages
+                    if message['type'] == 'subscribe':
+                        logger.info(f"[{scan_id}] ✅ Subscribed to channel")
+                        continue
 
-                    if message and message['type'] == 'message':
-                        # Parse the message data
-                        data = json.loads(message['data'])
+                    # Process actual messages
+                    if message['type'] == 'message':
+                        try:
+                            # Parse the message data
+                            data = json.loads(message['data'])
 
-                        # Add metadata
-                        data['type'] = 'scan_update'
-                        data['timestamp'] = datetime.utcnow().isoformat()
+                            # Add metadata
+                            data['type'] = 'scan_update'
+                            data['timestamp'] = datetime.utcnow().isoformat()
 
-                        # Send to WebSocket client
-                        success = await manager.send_message(websocket, data)
+                            # Send to WebSocket client
+                            success = await manager.send_message(websocket, data)
 
-                        if success:
-                            logger.debug(
-                                f"[{scan_id}] 📤 Sent update: "
-                                f"{data.get('status')} - {data.get('progress', 0):.1f}%"
-                            )
+                            if success:
+                                logger.debug(
+                                    f"[{scan_id}] 📤 Sent update: "
+                                    f"{data.get('status')} - {data.get('progress', 0):.1f}%"
+                                )
+                        except json.JSONDecodeError as e:
+                            logger.error(f"[{scan_id}] ❌ Invalid JSON from Redis: {e}")
+                        except Exception as e:
+                            logger.error(f"[{scan_id}] ❌ Error processing message: {e}")
 
-                    # Small delay to prevent tight loop
-                    await asyncio.sleep(0.1)
-
-                except json.JSONDecodeError as e:
-                    logger.error(f"[{scan_id}] ❌ Invalid JSON from Redis: {e}")
-                except Exception as e:
-                    logger.error(f"[{scan_id}] ❌ Error in Redis listener: {e}")
-                    break
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Error in Redis listener: {e}")
+                raise
 
         # Listen for client messages (for heartbeat/ping)
         async def listen_client():
