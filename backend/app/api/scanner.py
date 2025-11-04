@@ -20,6 +20,7 @@ sys.path.insert(0, str(SCANNER_DIR))
 # Import scanner components
 from graph.builder import WorkflowGraphBuilder
 from models import ScanResult as ScannerScanResult
+from workflow_analyzer import WorkflowAnalyzer
 
 router = APIRouter(prefix="/api/v1/scanner", tags=["scanner"])
 
@@ -193,6 +194,11 @@ async def run_scan(scan_id: str, request: ScanRequest):
         loop = asyncio.get_event_loop()
         result: ScannerScanResult = await loop.run_in_executor(None, run_scanner)
 
+        # Analyze UI workflows
+        print(f"[{scan_id}] 🔍 Analyzing UI workflows...")
+        analyzer = WorkflowAnalyzer(result.graph)
+        workflows = analyzer.analyze()
+
         # Save results to disk
         output_dir = Path(f'/tmp/scans/{scan_id}')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -228,12 +234,42 @@ async def run_scan(scan_id: str, request: ScanRequest):
                 }
                 for edge in result.graph.edges
             ],
+            'workflows': [
+                {
+                    'id': wf.id,
+                    'name': wf.name,
+                    'summary': wf.summary,
+                    'outcome': wf.outcome,
+                    'trigger': {
+                        'name': wf.trigger.name,
+                        'description': wf.trigger.description,
+                        'interaction_type': wf.trigger.interaction_type,
+                        'component': wf.trigger.component,
+                        'location': wf.trigger.location,
+                    },
+                    'steps': [
+                        {
+                            'step_number': step.step_number,
+                            'title': step.title,
+                            'description': step.description,
+                            'technical_details': step.technical_details,
+                            'icon': step.icon,
+                            'node_id': step.node.id,
+                        }
+                        for step in wf.steps
+                    ],
+                    'story': wf.to_story(),
+                }
+                for wf in workflows
+            ],
             'scan_time_seconds': result.scan_time_seconds,
             'errors': result.errors,
         }
 
         with open(output_dir / 'results.json', 'w') as f:
             json.dump(result_json, f, indent=2)
+
+        print(f"[{scan_id}] ✅ Found {len(workflows)} UI workflows")
 
         # Complete scan
         await publish_progress(
@@ -419,8 +455,56 @@ async def get_scan_diagram(scan_id: str, format: str = "mermaid"):
         raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
 
 
+@router.get("/scan/{scan_id}/workflows")
+async def get_ui_workflows(scan_id: str):
+    """Get user-friendly UI workflows from scan results"""
+    results_file = Path(f'/tmp/scans/{scan_id}/results.json')
+
+    if not results_file.exists():
+        raise HTTPException(status_code=404, detail="Scan results not found")
+
+    with open(results_file, 'r') as f:
+        results = json.load(f)
+
+    workflows = results.get('workflows', [])
+
+    return {
+        'scan_id': scan_id,
+        'total_workflows': len(workflows),
+        'workflows': workflows
+    }
+
+
+@router.get("/scan/{scan_id}/workflows/{workflow_id}/diagram")
+async def get_workflow_diagram(scan_id: str, workflow_id: str):
+    """Get user-friendly diagram for a specific workflow"""
+    results_file = Path(f'/tmp/scans/{scan_id}/results.json')
+
+    if not results_file.exists():
+        raise HTTPException(status_code=404, detail="Scan results not found")
+
+    with open(results_file, 'r') as f:
+        results = json.load(f)
+
+    workflows = results.get('workflows', [])
+    workflow = next((w for w in workflows if w['id'] == workflow_id), None)
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Generate user-friendly Mermaid diagram
+    diagram = _generate_workflow_diagram(workflow)
+
+    return {
+        'workflow_id': workflow_id,
+        'name': workflow['name'],
+        'diagram': diagram,
+        'story': workflow['story']
+    }
+
+
 def _generate_mermaid_diagram(results: dict) -> str:
-    """Generate Mermaid flowchart from scan results"""
+    """Generate Mermaid flowchart from scan results (technical view)"""
     lines = ["graph TD"]
 
     # Add nodes
@@ -450,3 +534,47 @@ def _generate_mermaid_diagram(results: dict) -> str:
             lines.append(f"    {source} --> {target}")
 
     return '\n'.join(lines)
+
+
+def _generate_workflow_diagram(workflow: dict) -> str:
+    """Generate user-friendly Mermaid diagram for a workflow"""
+    lines = [
+        "graph TD",
+        "    classDef userAction fill:#4CAF50,stroke:#45a049,stroke-width:3px,color:#fff",
+        "    classDef database fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff",
+        "    classDef api fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff",
+        "    classDef process fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff",
+        "    classDef result fill:#4CAF50,stroke:#45a049,stroke-width:2px,color:#fff",
+        ""
+    ]
+
+    # Add trigger node
+    trigger = workflow['trigger']
+    trigger_id = "start"
+    lines.append(f'    {trigger_id}["{trigger["description"]}"]:::userAction')
+
+    # Add workflow steps
+    prev_id = trigger_id
+    for step in workflow['steps']:
+        step_id = f"step{step['step_number']}"
+        label = f"{step['icon']} {step['title']}"
+
+        # Determine class based on description
+        if 'database' in step['title'].lower() or 'save' in step['title'].lower():
+            node_class = "database"
+        elif 'api' in step['title'].lower() or 'call' in step['title'].lower():
+            node_class = "api"
+        else:
+            node_class = "process"
+
+        lines.append(f'    {step_id}["{label}"]:::{node_class}')
+        lines.append(f'    {prev_id} --> {step_id}')
+        prev_id = step_id
+
+    # Add result node
+    result_id = "result"
+    outcome = workflow['outcome']
+    lines.append(f'    {result_id}["{outcome}"]:::result')
+    lines.append(f'    {prev_id} --> {result_id}')
+
+    return "\n".join(lines)
