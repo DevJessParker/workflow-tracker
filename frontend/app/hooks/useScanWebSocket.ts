@@ -112,7 +112,8 @@ export function useScanWebSocket({
       return
     }
 
-    const wsUrl = `${url}/ws/scan/${scanId}`
+    // Use the correct API path for WebSocket endpoint
+    const wsUrl = `${url}/api/v1/scanner/ws/scan/${scanId}`
     console.log(`[WebSocket] 🔌 Connecting to: ${wsUrl}`)
 
     updateConnectionStatus('connecting')
