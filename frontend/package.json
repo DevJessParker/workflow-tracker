@@ -15,7 +15,8 @@
     "react-dom": "^18.2.0",
     "mermaid": "^10.6.1",
     "plotly.js": "^2.27.0",
-    "react-plotly.js": "^2.6.0"
+    "react-plotly.js": "^2.6.0",
+    "canvas-confetti": "^1.9.2"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",

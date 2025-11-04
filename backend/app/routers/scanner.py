@@ -155,7 +155,7 @@ async def get_scan_results(scan_id: str):
         "scan_id": scan_id,
         "status": "completed",
         "files_scanned": result.files_scanned,
-        "scan_duration": result.scan_duration,
+        "scan_duration": result.scan_time_seconds,
         "graph": {
             "nodes": [
                 {

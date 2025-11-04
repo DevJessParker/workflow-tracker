@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import confetti from 'canvas-confetti'
 import { useScanWebSocket, ConnectionStatus } from '../../hooks/useScanWebSocket'
 
 interface ScanConfig {
@@ -214,6 +215,39 @@ export default function ScannerPage() {
     }
   }
 
+  // Confetti celebration function
+  const triggerConfetti = () => {
+    const duration = 3000
+    const animationEnd = Date.now() + duration
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 }
+
+    function randomInRange(min: number, max: number) {
+      return Math.random() * (max - min) + min
+    }
+
+    const interval: any = setInterval(function() {
+      const timeLeft = animationEnd - Date.now()
+
+      if (timeLeft <= 0) {
+        return clearInterval(interval)
+      }
+
+      const particleCount = 50 * (timeLeft / duration)
+
+      // Fire from two sides
+      confetti({
+        ...defaults,
+        particleCount,
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
+      })
+      confetti({
+        ...defaults,
+        particleCount,
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
+      })
+    }, 250)
+  }
+
   // WebSocket hook for real-time scan updates
   useScanWebSocket({
     url: WS_URL,
@@ -238,7 +272,17 @@ export default function ScannerPage() {
       if (update.status === 'completed') {
         console.log('✅ Scan completed!')
         setScanning(false)
+
+        // Trigger confetti celebration!
+        triggerConfetti()
+
+        // Load results and optionally redirect
         loadScanResults(update.scan_id)
+
+        // Optional: Auto-scroll to results after confetti
+        setTimeout(() => {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+        }, 1500)
       } else if (update.status === 'failed') {
         console.error('❌ Scan failed:', update.message)
         setScanning(false)
