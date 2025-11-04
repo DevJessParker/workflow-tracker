@@ -173,9 +173,50 @@ class WorkflowGraphBuilder:
         else:
             print("\n⚠️  Skipping edge inference (disabled in config)")
 
+        # API Routes Analysis
+        print("\n" + "="*60)
+        print("ANALYZING API ROUTES")
+        print("="*60)
+        try:
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing API routes and endpoints...")
+            self._analyze_api_routes(result.graph, progress_callback)
+        except Exception as e:
+            error_msg = f"API routes analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            print(f"⚠️  WARNING: {error_msg}")
+
+        # Pages and Components Analysis
+        print("\n" + "="*60)
+        print("ANALYZING PAGES AND COMPONENTS")
+        print("="*60)
+        try:
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing UI pages and components...")
+            self._analyze_pages_and_components(result.graph, progress_callback)
+        except Exception as e:
+            error_msg = f"Pages/components analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            print(f"⚠️  WARNING: {error_msg}")
+
+        # Dependency Analysis
+        print("\n" + "="*60)
+        print("ANALYZING DEPENDENCIES")
+        print("="*60)
+        try:
+            if progress_callback:
+                progress_callback(len(files_to_scan), len(files_to_scan), "Analyzing code dependencies...")
+            self._analyze_dependencies(result.graph, progress_callback)
+        except Exception as e:
+            error_msg = f"Dependency analysis failed: {str(e)}"
+            result.errors.append(error_msg)
+            print(f"⚠️  WARNING: {error_msg}")
+
         result.scan_time_seconds = time.time() - start_time
 
-        print(f"\nScan complete:")
+        print("\n" + "="*60)
+        print("SCAN COMPLETE")
+        print("="*60)
         print(f"  Files scanned: {result.files_scanned}")
         print(f"  Nodes found: {len(result.graph.nodes)}")
         print(f"  Edges found: {len(result.graph.edges)}")
@@ -183,6 +224,10 @@ class WorkflowGraphBuilder:
 
         if result.errors:
             print(f"  Errors: {len(result.errors)}")
+
+        # Final completion message
+        if progress_callback:
+            progress_callback(len(files_to_scan), len(files_to_scan), "Scan completed successfully!")
 
         return result
 
@@ -203,6 +248,11 @@ class WorkflowGraphBuilder:
         csharp_scanner = CSharpScanner(self.config.get('scanner', {}))
         schemas_found = 0
         files_checked = 0
+        last_update_time = time.time()
+
+        # Count total C# files for accurate progress
+        total_cs_files = sum(1 for f in files_to_scan if f.endswith('.cs'))
+        print(f"  Scanning {total_cs_files} C# files for database schemas...")
 
         for file_path in files_to_scan:
             if file_path.endswith('.cs'):
@@ -217,17 +267,27 @@ class WorkflowGraphBuilder:
 
                     files_checked += 1
 
-                    # Send progress update every 100 files
-                    if progress_callback and files_checked % 100 == 0:
-                        progress_msg = f"Discovering schemas... ({files_checked} files checked, {len(result.schemas_discovered):,} schemas found)"
-                        progress_callback(0, len(files_to_scan), progress_msg)
+                    current_time = time.time()
+
+                    # Send progress update every 10 files OR every 2 seconds (much more frequent!)
+                    if progress_callback and (files_checked % 10 == 0 or (current_time - last_update_time) >= 2):
+                        progress_pct = (files_checked / total_cs_files * 100) if total_cs_files > 0 else 0
+                        progress_msg = f"Discovering database schemas... ({files_checked}/{total_cs_files} files, {len(result.schemas_discovered):,} schemas found)"
+
+                        # Print to console for debugging
+                        print(f"  [{progress_pct:5.1f}%] {progress_msg}")
+
+                        # Notify frontend
+                        progress_callback(files_checked, total_cs_files, progress_msg)
+                        last_update_time = current_time
 
                 except Exception as e:
                     # Don't fail the entire scan if schema detection fails
+                    print(f"  ⚠️  Warning: Failed to detect schemas in {file_path}: {str(e)}")
                     pass
 
-        print(f"  Checked {files_checked} C# files")
-        print(f"  Discovered {len(result.schemas_discovered)} unique schemas")
+        print(f"  ✓ Checked {files_checked} C# files")
+        print(f"  ✓ Discovered {len(result.schemas_discovered)} unique schemas")
 
     def _find_files(self, root_path: str, include_extensions: List[str], exclude_dirs: List[str]) -> List[str]:
         """Find all files to scan in the repository.
@@ -506,3 +566,188 @@ class WorkflowGraphBuilder:
         if progress_callback:
             progress_msg = f"Data flow analysis complete: {total_edge_count:,} edges created"
             progress_callback(total_files, total_files, progress_msg)
+
+    def _analyze_api_routes(self, graph: WorkflowGraph, progress_callback=None):
+        """Analyze API routes and endpoints in the workflow graph.
+
+        This identifies:
+        - Unique API endpoints
+        - HTTP methods used
+        - Frequency of API calls
+        - API call patterns
+        """
+        from models import WorkflowType
+        from collections import defaultdict
+
+        print("  Analyzing API endpoints...")
+
+        # Extract all API-related nodes
+        api_nodes = [node for node in graph.nodes if node.type == WorkflowType.API_CALL]
+
+        if not api_nodes:
+            print("  ✓ No API endpoints found")
+            if progress_callback:
+                progress_callback(1, 1, "API analysis complete: No endpoints found")
+            return
+
+        # Group by endpoint
+        endpoint_stats = defaultdict(lambda: {"methods": set(), "count": 0, "files": set()})
+
+        for node in api_nodes:
+            endpoint = node.endpoint or "unknown"
+            method = node.method or "UNKNOWN"
+
+            endpoint_stats[endpoint]["methods"].add(method)
+            endpoint_stats[endpoint]["count"] += 1
+            endpoint_stats[endpoint]["files"].add(node.location.file_path)
+
+        # Report findings
+        print(f"  ✓ Found {len(endpoint_stats)} unique API endpoints")
+        print(f"  ✓ Total API calls: {len(api_nodes)}")
+
+        # Show top 5 most used endpoints
+        sorted_endpoints = sorted(endpoint_stats.items(), key=lambda x: x[1]["count"], reverse=True)
+        if sorted_endpoints:
+            print("  Top API endpoints:")
+            for endpoint, stats in sorted_endpoints[:5]:
+                methods_str = ", ".join(sorted(stats["methods"]))
+                print(f"    • {endpoint} ({methods_str}): {stats['count']} calls in {len(stats['files'])} files")
+
+        if progress_callback:
+            progress_callback(1, 1, f"API analysis complete: {len(endpoint_stats)} endpoints, {len(api_nodes)} calls")
+
+    def _analyze_pages_and_components(self, graph: WorkflowGraph, progress_callback=None):
+        """Analyze UI pages and components in the workflow graph.
+
+        This identifies:
+        - UI interaction points
+        - Component hierarchies
+        - Page workflows
+        """
+        from models import WorkflowType
+        from collections import defaultdict
+
+        print("  Analyzing UI components and pages...")
+
+        # Extract all UI-related nodes
+        ui_nodes = [node for node in graph.nodes
+                   if node.type in [WorkflowType.UI_INTERACTION, WorkflowType.UI_RENDER]]
+
+        if not ui_nodes:
+            print("  ✓ No UI components found")
+            if progress_callback:
+                progress_callback(1, 1, "UI analysis complete: No components found")
+            return
+
+        # Group by file (each file is likely a component or page)
+        file_components = defaultdict(list)
+        for node in ui_nodes:
+            file_path = node.location.file_path
+            file_components[file_path].append(node)
+
+        # Identify component types
+        component_types = defaultdict(int)
+        for node in ui_nodes:
+            # Categorize by file extension or node type
+            if node.location.file_path.endswith('.tsx') or node.location.file_path.endswith('.jsx'):
+                component_types['React'] += 1
+            elif node.location.file_path.endswith('.xaml'):
+                component_types['WPF'] += 1
+            elif node.location.file_path.endswith('.html'):
+                component_types['Angular'] += 1
+            else:
+                component_types['Other'] += 1
+
+        # Report findings
+        print(f"  ✓ Found {len(file_components)} component files")
+        print(f"  ✓ Total UI interactions: {len(ui_nodes)}")
+
+        if component_types:
+            print("  Component breakdown:")
+            for comp_type, count in sorted(component_types.items(), key=lambda x: x[1], reverse=True):
+                print(f"    • {comp_type}: {count} interactions")
+
+        # Show files with most UI interactions
+        sorted_files = sorted(file_components.items(), key=lambda x: len(x[1]), reverse=True)
+        if sorted_files:
+            print("  Most interactive components:")
+            for file_path, nodes in sorted_files[:5]:
+                file_name = file_path.split('/')[-1]
+                print(f"    • {file_name}: {len(nodes)} interactions")
+
+        if progress_callback:
+            progress_callback(1, 1, f"UI analysis complete: {len(file_components)} components, {len(ui_nodes)} interactions")
+
+    def _analyze_dependencies(self, graph: WorkflowGraph, progress_callback=None):
+        """Analyze code dependencies and relationships in the workflow graph.
+
+        This identifies:
+        - Files with most dependencies
+        - Highly connected workflow nodes
+        - Potential architectural insights
+        """
+        from collections import defaultdict
+
+        print("  Analyzing code dependencies...")
+
+        # Count dependencies by file
+        file_dependencies = defaultdict(lambda: {"incoming": 0, "outgoing": 0, "nodes": 0})
+
+        # Count nodes per file
+        for node in graph.nodes:
+            file_path = node.location.file_path
+            file_dependencies[file_path]["nodes"] += 1
+
+        # Count edges (dependencies) per file
+        node_to_file = {node.id: node.location.file_path for node in graph.nodes}
+
+        for edge in graph.edges:
+            source_file = node_to_file.get(edge.source)
+            target_file = node_to_file.get(edge.target)
+
+            if source_file and target_file:
+                if source_file != target_file:
+                    # Cross-file dependency
+                    file_dependencies[source_file]["outgoing"] += 1
+                    file_dependencies[target_file]["incoming"] += 1
+
+        # Report findings
+        total_files = len(file_dependencies)
+        total_cross_file_edges = sum(stats["outgoing"] for stats in file_dependencies.values())
+
+        print(f"  ✓ Analyzed {total_files} files")
+        print(f"  ✓ Found {total_cross_file_edges} cross-file dependencies")
+
+        # Find most connected files (hubs)
+        if file_dependencies:
+            sorted_by_connections = sorted(
+                file_dependencies.items(),
+                key=lambda x: x[1]["incoming"] + x[1]["outgoing"],
+                reverse=True
+            )
+
+            if sorted_by_connections:
+                print("  Most connected files (dependency hubs):")
+                for file_path, stats in sorted_by_connections[:5]:
+                    file_name = file_path.split('/')[-1]
+                    total_connections = stats["incoming"] + stats["outgoing"]
+                    print(f"    • {file_name}: {total_connections} connections "
+                          f"({stats['incoming']} in, {stats['outgoing']} out, {stats['nodes']} nodes)")
+
+            # Find files with high outgoing dependencies (potential service layers)
+            sorted_by_outgoing = sorted(
+                file_dependencies.items(),
+                key=lambda x: x[1]["outgoing"],
+                reverse=True
+            )
+
+            if sorted_by_outgoing and sorted_by_outgoing[0][1]["outgoing"] > 0:
+                print("  Files with most outgoing dependencies (potential service/utility layers):")
+                for file_path, stats in sorted_by_outgoing[:5]:
+                    if stats["outgoing"] == 0:
+                        break
+                    file_name = file_path.split('/')[-1]
+                    print(f"    • {file_name}: {stats['outgoing']} outgoing dependencies")
+
+        if progress_callback:
+            progress_callback(1, 1, f"Dependency analysis complete: {total_files} files, {total_cross_file_edges} cross-file links")
