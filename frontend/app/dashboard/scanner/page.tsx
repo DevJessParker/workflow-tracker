@@ -123,11 +123,22 @@ export default function ScannerPage() {
 
   const loadRepositories = async (source: string) => {
     try {
+      console.log(`📂 Loading ${source} repositories...`)
       const response = await fetch(`${API_URL}/api/v1/scanner/repositories?source=${source}`)
       const data = await response.json()
-      setRepositories(data.repositories || [])
+
+      // Backend returns array directly, not wrapped in {repositories: [...]}
+      const repos = Array.isArray(data) ? data : (data.repositories || [])
+      console.log(`✅ Loaded ${repos.length} repositories:`, repos)
+
+      setRepositories(repos)
+
+      // Auto-select first repository if available
+      if (repos.length > 0 && !config.repoPath) {
+        setConfig({ ...config, repoPath: repos[0].path })
+      }
     } catch (error) {
-      console.error('Failed to load repositories:', error)
+      console.error('❌ Failed to load repositories:', error)
     }
   }
 
