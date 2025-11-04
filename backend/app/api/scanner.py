@@ -502,6 +502,7 @@ async def websocket_scan_progress(websocket: WebSocket, scan_id: str):
                 "total_files": status_data.get("total_files"),
                 "nodes_found": status_data.get("nodes_found"),
                 "eta": status_data.get("eta"),
+                "analysis_steps": status_data.get("analysis_steps"),
                 "timestamp": "now"
             }
             await websocket.send_text(json.dumps(update_msg))
@@ -529,11 +530,14 @@ async def websocket_scan_progress(websocket: WebSocket, scan_id: str):
                     "total_files": data.get("total_files"),
                     "nodes_found": data.get("nodes_found"),
                     "eta": data.get("eta"),
+                    "analysis_steps": data.get("analysis_steps"),
                     "timestamp": "now"
                 }
 
                 await websocket.send_text(json.dumps(update_msg))
                 print(f"[{scan_id}] 📤 Sent progress update: {data.get('status')} - {data.get('progress')}%")
+                if data.get("analysis_steps"):
+                    print(f"[{scan_id}] 📋 Sent {len(data.get('analysis_steps'))} analysis steps via WebSocket")
 
                 # Check if scan is complete
                 if data["status"] in ["completed", "error", "failed"]:
