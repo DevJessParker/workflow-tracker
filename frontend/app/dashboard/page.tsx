@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null)
   const [isDevMode, setIsDevMode] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [unviewedScansCount, setUnviewedScansCount] = useState(0)
 
   useEffect(() => {
     // Check authentication
@@ -30,6 +31,29 @@ export default function DashboardPage() {
     setIsDevMode(devMode === 'true')
     setLoading(false)
   }, [router])
+
+  useEffect(() => {
+    // Load unviewed scans count
+    loadUnviewedScansCount()
+
+    // Poll every 30 seconds for updates
+    const interval = setInterval(loadUnviewedScansCount, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const loadUnviewedScansCount = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/v1/scanner/scans/unviewed/count`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setUnviewedScansCount(data.count)
+      }
+    } catch (err) {
+      console.error('Failed to load unviewed scans count:', err)
+    }
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('user')
@@ -116,11 +140,16 @@ export default function DashboardPage() {
                     href={link.href}
                     className={
                       link.active
-                        ? 'text-purple-600 font-medium border-b-2 border-purple-600 pb-1'
-                        : 'text-gray-600 hover:text-purple-600'
+                        ? 'text-purple-600 font-medium border-b-2 border-purple-600 pb-1 relative'
+                        : 'text-gray-600 hover:text-purple-600 relative'
                     }
                   >
                     {link.label}
+                    {link.label === 'Scans' && unviewedScansCount > 0 && (
+                      <span className="absolute -top-2 -right-4 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                        {unviewedScansCount}
+                      </span>
+                    )}
                   </Link>
                 ))}
               </div>

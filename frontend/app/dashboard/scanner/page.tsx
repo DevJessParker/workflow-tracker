@@ -268,13 +268,16 @@ export default function ScannerPage() {
     if (update.status === 'completed') {
       console.log('✅ Scan completed!')
       setScanning(false)
-      loadScanResults(update.scan_id)
+      // Redirect to scans page to view results
+      setTimeout(() => {
+        router.push('/dashboard/scans')
+      }, 1500) // Brief delay to show completion state
     } else if (update.status === 'failed') {
       console.error('❌ Scan failed:', update.message)
       setScanning(false)
       alert(`Scan failed: ${update.message}`)
     }
-  }, [loadScanResults])
+  }, [router])
 
   const handleConnectionChange = useCallback((status) => {
     console.log('🔌 WebSocket connection status:', status)

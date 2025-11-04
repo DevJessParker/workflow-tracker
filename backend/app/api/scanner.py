@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -22,10 +23,17 @@ from graph.builder import WorkflowGraphBuilder
 from models import ScanResult as ScannerScanResult
 from workflow_analyzer import WorkflowAnalyzer
 
+# Import backend services
+from app.models.scan import ScanMetadata, ScanListResponse, UnviewedCountResponse
+from app.services.scan_storage import ScanStorage
+
 router = APIRouter(prefix="/api/v1/scanner", tags=["scanner"])
 
 # Redis connection
 redis_client: Optional[aioredis.Redis] = None
+
+# Scan storage service
+scan_storage = ScanStorage()
 
 
 async def get_redis():
@@ -100,6 +108,19 @@ async def start_scan(request: ScanRequest, raw_request: Request = None):
     print(f"[{scan_id}] 📁 Repository: {request.repo_path}")
     print(f"[{scan_id}] 📝 File extensions: {request.file_extensions}")
     print(f"[{scan_id}] 🔍 Detections: DB={request.detect_database}, API={request.detect_api}, Files={request.detect_files}")
+
+    # Create scan metadata entry
+    scan_metadata = ScanMetadata(
+        scan_id=scan_id,
+        repository_path=request.repo_path,
+        scan_type="full",  # Default to full scan
+        performed_by="system",  # TODO: Get from auth context
+        created_at=datetime.utcnow().isoformat(),
+        status="queued",
+        viewed=False,
+    )
+    scan_storage.create_scan(scan_metadata)
+    print(f"[{scan_id}] 💾 Scan metadata created")
 
     # Initialize scan status in Redis
     redis = await get_redis()
@@ -286,6 +307,18 @@ async def run_scan(scan_id: str, request: ScanRequest):
             total_files_estimate
         )
 
+        # Update scan metadata
+        scan_storage.update_scan(scan_id, {
+            'status': 'completed',
+            'completed_at': datetime.utcnow().isoformat(),
+            'files_scanned': result.files_scanned,
+            'nodes_found': len(result.graph.nodes),
+            'total_files': total_files_estimate,
+            'scan_duration': result.scan_time_seconds,
+            'errors': result.errors,
+        })
+        print(f"[{scan_id}] 💾 Scan metadata updated")
+
         print(f"[{scan_id}] ✅ Scan completed: {result.files_scanned} files, {len(result.graph.nodes)} nodes")
 
     except Exception as e:
@@ -295,6 +328,14 @@ async def run_scan(scan_id: str, request: ScanRequest):
         await publish_progress(
             redis, scan_id, "error", 0.0, f"Scan failed: {str(e)}", 0, 0, 0
         )
+
+        # Update scan metadata with error
+        scan_storage.update_scan(scan_id, {
+            'status': 'error',
+            'completed_at': datetime.utcnow().isoformat(),
+            'errors': [str(e)],
+        })
+        print(f"[{scan_id}] 💾 Scan metadata updated with error")
 
 
 async def publish_progress(
@@ -588,3 +629,37 @@ def _generate_workflow_diagram(workflow: dict) -> str:
     lines.append(f'    {prev_id} --> {result_id}')
 
     return "\n".join(lines)
+
+
+# ============================================================================
+# Scan History Endpoints
+# ============================================================================
+
+@router.get("/scans", response_model=ScanListResponse)
+async def list_scans(limit: Optional[int] = 100, offset: int = 0):
+    """List all scans with pagination"""
+    scans = scan_storage.list_scans(limit=limit, offset=offset)
+    total = scan_storage.count_total_scans()
+
+    return ScanListResponse(
+        total=total,
+        scans=scans
+    )
+
+
+@router.get("/scans/unviewed/count", response_model=UnviewedCountResponse)
+async def get_unviewed_count():
+    """Get count of unviewed scans"""
+    count = scan_storage.count_unviewed_scans()
+    return UnviewedCountResponse(count=count)
+
+
+@router.patch("/scans/{scan_id}/viewed")
+async def mark_scan_as_viewed(scan_id: str):
+    """Mark a scan as viewed"""
+    success = scan_storage.mark_as_viewed(scan_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    return {"success": True, "scan_id": scan_id, "viewed": True}
