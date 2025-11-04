@@ -48,15 +48,38 @@ interface WorkflowEdge {
   edge_type: string
 }
 
+interface UIWorkflow {
+  id: string
+  name: string
+  summary: string
+  outcome: string
+  trigger: {
+    name: string
+    description: string
+    interaction_type: string
+    component: string
+    location: string
+  }
+  steps: Array<{
+    step_number: number
+    title: string
+    description: string
+    technical_details: string
+    icon: string
+    node_id: string
+  }>
+  story: string
+}
+
 interface ScanResults {
   scan_id: string
-  status: string
+  repository_path: string
   files_scanned: number
-  scan_duration: number
-  graph: {
-    nodes: WorkflowNode[]
-    edges: WorkflowEdge[]
-  }
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  workflows?: UIWorkflow[]
+  scan_time_seconds: number
+  errors: string[]
 }
 
 export default function ScannerPage() {
@@ -566,8 +589,8 @@ export default function ScannerPage() {
             {/* Scan Results */}
             {scanResults && (() => {
               // Calculate metrics
-              const nodes = scanResults.graph.nodes
-              const edges = scanResults.graph.edges
+              const nodes = scanResults.nodes || []
+              const edges = scanResults.edges || []
 
               const nodesByType = nodes.reduce((acc: any, node) => {
                 acc[node.type] = (acc[node.type] || 0) + 1
