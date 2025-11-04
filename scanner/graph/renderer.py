@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 import networkx as nx
-from ..models import WorkflowGraph, WorkflowType, ScanResult
+from models import WorkflowGraph, WorkflowType, ScanResult
 
 
 class WorkflowRenderer:

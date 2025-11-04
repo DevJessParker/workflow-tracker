@@ -1,0 +1,22 @@
+# Core Dependencies
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Graph and Visualization
+networkx>=3.0
+plotly>=5.17.0
+pandas>=2.0.0
+
+# Optional: For PNG/SVG rendering (requires system graphviz)
+# Uncomment if you need static image export
+# pygraphviz>=1.11
+
+# Optional: For advanced code parsing (future enhancement)
+# tree-sitter>=0.20.0
+
+# Development Dependencies (optional)
+# pytest>=7.4.0
+# pytest-cov>=4.1.0
+# black>=23.0.0
+# flake8>=6.0.0

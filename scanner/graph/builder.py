@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from typing import List, Dict, Any
 
-from ..models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
-from ..scanner import CSharpScanner, TypeScriptScanner
+from models import WorkflowGraph, WorkflowNode, WorkflowEdge, ScanResult
+from scanner import CSharpScanner, TypeScriptScanner, ReactScanner, AngularScanner, WPFScanner
 
 
 class WorkflowGraphBuilder:
@@ -26,8 +26,11 @@ class WorkflowGraphBuilder:
         scanner_config = self.config.get('scanner', {})
 
         scanners = [
-            CSharpScanner(scanner_config),
-            TypeScriptScanner(scanner_config),
+            CSharpScanner(scanner_config),       # C# backend code
+            TypeScriptScanner(scanner_config),   # TypeScript/JavaScript
+            ReactScanner(scanner_config),        # React UI workflows
+            AngularScanner(scanner_config),      # Angular UI workflows
+            WPFScanner(scanner_config),          # WPF desktop UI workflows
         ]
 
         return scanners
@@ -308,7 +311,7 @@ class WorkflowGraphBuilder:
         Args:
             graph: Workflow graph to analyze
         """
-        from ..models import WorkflowType
+        from models import WorkflowType
         from collections import defaultdict
 
         print("  Inferring data flow edges...")

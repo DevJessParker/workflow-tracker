@@ -127,28 +127,28 @@ Follow the **complete implementation plan** in `docs/IMPLEMENTATION_PLAN.md`:
 
 ---
 
-### Option 3: Keep Using Streamlit (Legacy)
+### Option 3: Use the Integrated Scanner
 
-The existing Streamlit app still works! It's now located in `scanner/cli/`:
+The scanner is now fully integrated into the web application! No more standalone Streamlit app.
 
 ```bash
-# Run Streamlit GUI directly (existing functionality)
-streamlit run scanner/cli/streamlit_app.py
+# Start the entire stack
+docker-compose up --build
 
-# Or use the existing Docker Compose setup
-docker-compose -f docker-compose.yml up workflow-tracker
+# Then access the scanner at:
+# http://localhost:3000/dashboard/scanner
 ```
 
-All your current workflows, database schema analysis, and Confluence integration work exactly as before!
+See **[SCANNER_INTEGRATION.md](SCANNER_INTEGRATION.md)** for complete scanner documentation.
 
 ## Understanding the Vision
 
-### Current State: Standalone Tool
-- ✅ Streamlit GUI for code scanning
-- ✅ Workflow visualization
+### Current State: Integrated Scanner
+- ✅ Web-based scanner UI at /dashboard/scanner
+- ✅ Real-time workflow visualization
 - ✅ Database schema analysis
-- ✅ Confluence integration
-- ✅ Local execution only
+- ✅ Local and cloud repository support
+- ✅ FastAPI backend with background tasks
 
 ### Future State: Production SaaS
 - 🎯 Multi-tenant web application
@@ -220,13 +220,16 @@ See `docs/REVENUE_STRATEGY.md` for full details.
    cat scanner/README.md
    ```
 
-### If you want to keep using the current tool:
+### If you want to use the scanner right now:
 
-Nothing changes! The Streamlit app still works:
+The scanner is integrated into the web app:
 
 ```bash
-streamlit run scanner/cli/streamlit_app.py
+docker-compose up --build
+# Open http://localhost:3000/dashboard/scanner
 ```
+
+See **[SCANNER_INTEGRATION.md](SCANNER_INTEGRATION.md)** for usage guide.
 
 ## Timeline Expectations
 
@@ -271,23 +274,25 @@ You'll know you're making progress when:
 
 ## Important Notes
 
-### Backward Compatibility
-- ✅ Existing Streamlit app still works
-- ✅ All scanning functionality preserved
-- ✅ Confluence integration maintained
-- ✅ CLI tools still functional
+### Recent Changes
+- ✅ Scanner integrated into web application
+- ✅ Streamlit app deprecated (archived in scanner/deprecated/)
+- ✅ FastAPI backend endpoints added for scanner
+- ✅ Next.js scanner page at /dashboard/scanner
+- ✅ Real-time progress updates with background tasks
 
 ### What Changed
 - ✅ Code moved from `src/` to `scanner/`
 - ✅ New directories created (frontend/, backend/, infrastructure/)
 - ✅ Environment variables expanded in .env.example
 - ✅ Docker Compose configurations added
+- ✅ Scanner now uses web UI instead of Streamlit
 
-### What's NOT Changed
-- ✅ Scanning logic unchanged
-- ✅ Workflow detection unchanged
-- ✅ Visualization algorithms unchanged
-- ✅ Database schema analysis unchanged
+### What's Preserved
+- ✅ Core scanning logic unchanged
+- ✅ Workflow detection algorithms intact
+- ✅ Visualization capabilities maintained
+- ✅ Database schema analysis working
 
 ## Your Commitment
 

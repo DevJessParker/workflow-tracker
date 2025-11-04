@@ -12,6 +12,9 @@ import redis.asyncio as aioredis
 # Import API routes
 from app.api.scanner import router as scanner_router
 
+# Import routers
+from app.routers import scanner, scanner_websocket
+
 # Create FastAPI app
 app = FastAPI(
     title="Pinata Code API",
@@ -34,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(scanner.router)
+app.include_router(scanner_websocket.router)
 
 
 @app.get("/")
@@ -77,20 +84,18 @@ async def api_status():
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup"""
+    from app.redis_client import check_redis_connection, get_redis_info
+
     print("🪅 Pinata Code Backend starting...")
     print(f"📊 Environment: {os.getenv('ENVIRONMENT', 'development')}")
     print(f"🔗 CORS origins: {CORS_ORIGINS}")
 
-    # Test Redis connection
-    try:
-        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-        redis = await aioredis.from_url(redis_url, decode_responses=True)
-        redis_info = await redis.info("server")
-        client_list = await redis.client_list()
-        print(f"📡 Redis: Connected ({redis_info['redis_version']} - {len(client_list)} clients)")
-        await redis.close()
-    except Exception as e:
-        print(f"❌ Redis: Connection failed - {e}")
+    # Check Redis connection
+    if check_redis_connection():
+        info = get_redis_info()
+        print(f"📡 Redis: Connected ({info.get('version', 'unknown')} - {info.get('connected_clients', 0)} clients)")
+    else:
+        print("⚠️  Redis: Connection failed - WebSocket updates will not work")
 
     print("✅ Backend ready!")
 

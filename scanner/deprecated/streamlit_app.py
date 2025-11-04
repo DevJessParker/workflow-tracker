@@ -14,25 +14,42 @@ print(f"Python version: {sys.version}")
 print(f"Working directory: {os.getcwd()}")
 print(f"Script location: {__file__}")
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-print(f"Added to sys.path: {str(Path(__file__).parent.parent.parent)}")
+# Add parent directory to path to enable importing scanner as a package
+scanner_parent = str(Path(__file__).parent.parent.parent)  # /home/user/workflow-tracker
+sys.path.insert(0, scanner_parent)
+print(f"Added to sys.path: {scanner_parent}")
 
-# Try importing with error handling
+# Try importing with error handling - support both Docker (src.*) and standalone (scanner.*)
 print("\nAttempting to import modules...")
+IMPORTS_OK = False
+IMPORT_ERROR = None
+
+# Try Docker-style imports first (src.*)
 try:
     from src.config_loader import Config
     from src.graph.builder import WorkflowGraphBuilder
     from src.graph.renderer import WorkflowRenderer
     from src.models import WorkflowType
     IMPORTS_OK = True
-    IMPORT_ERROR = None
-    print("✓ All modules imported successfully")
-except Exception as e:
-    IMPORTS_OK = False
-    IMPORT_ERROR = str(e)
-    print(f"✗ ERROR: Failed to import modules: {e}")
-    traceback.print_exc()
+    print("✓ All modules imported successfully (Docker mode: src.*)")
+except Exception as docker_error:
+    print(f"✗ Docker-style imports failed: {docker_error}")
+    print("Attempting standalone imports (scanner.*)...")
+
+    # Try standalone imports (scanner.*)
+    # The scanner directory must be importable as a package from scanner_parent
+    try:
+        from scanner.config_loader import Config
+        from scanner.graph.builder import WorkflowGraphBuilder
+        from scanner.graph.renderer import WorkflowRenderer
+        from scanner.models import WorkflowType
+        IMPORTS_OK = True
+        print("✓ All modules imported successfully (Standalone mode: scanner.*)")
+    except Exception as standalone_error:
+        IMPORT_ERROR = f"Both import styles failed.\nDocker (src.*): {docker_error}\nStandalone (scanner.*): {standalone_error}"
+        print(f"✗ ERROR: {IMPORT_ERROR}")
+        print(f"\nCurrent sys.path: {sys.path[:3]}")
+        traceback.print_exc()
 
 print("=" * 60)
 
@@ -171,21 +188,17 @@ def main():
         st.session_state.output_files = None
     if 'generated_diagram' not in st.session_state:
         st.session_state.generated_diagram = None
-    if 'scan_complete_flag' not in st.session_state:
-        st.session_state.scan_complete_flag = False
     if 'scan_running' not in st.session_state:
         st.session_state.scan_running = False
     if 'stop_scan' not in st.session_state:
         st.session_state.stop_scan = False
     if 'scan_triggered' not in st.session_state:
         st.session_state.scan_triggered = False
+    if 'tabs_shown' not in st.session_state:
+        st.session_state.tabs_shown = False
 
-    # Check if scan results exist
+    # Check if scan results exist (determines which tabs to show)
     has_results = st.session_state.scan_result is not None
-
-    # Reset flag after rerun (prevents rerun loop)
-    if st.session_state.scan_complete_flag:
-        st.session_state.scan_complete_flag = False
 
     # Create tabbed interface
     if not has_results:
@@ -232,25 +245,27 @@ def render_scan_tab():
             repo_path = st.text_input(
                 "Repository Path",
                 value=default_repo,
-                help="Path to the repository to scan"
+                help="Path to the repository to scan",
+                key="repo_path_input"
             )
 
             # File extensions
             extensions = st.text_input(
                 "File Extensions",
                 value=".cs,.ts,.js",
-                help="Comma-separated list of file extensions to scan"
+                help="Comma-separated list of file extensions to scan",
+                key="extensions_input"
             )
 
             st.markdown("**Detection Options**")
             col1, col2 = st.columns(2)
             with col1:
-                detect_database = st.checkbox("Database Operations", value=True)
-                detect_api = st.checkbox("API Calls", value=True)
-                detect_files = st.checkbox("File I/O", value=True)
+                detect_database = st.checkbox("Database Operations", value=True, key="detect_db_checkbox")
+                detect_api = st.checkbox("API Calls", value=True, key="detect_api_checkbox")
+                detect_files = st.checkbox("File I/O", value=True, key="detect_files_checkbox")
             with col2:
-                detect_messages = st.checkbox("Message Queues", value=True)
-                detect_transforms = st.checkbox("Data Transforms", value=True)
+                detect_messages = st.checkbox("Message Queues", value=True, key="detect_msg_checkbox")
+                detect_transforms = st.checkbox("Data Transforms", value=True, key="detect_transforms_checkbox")
 
             # Scan button inside form (disabled when scanning)
             submitted = st.form_submit_button(
@@ -275,6 +290,7 @@ def render_scan_tab():
             st.session_state.scan_running = True
             st.session_state.scan_triggered = True  # Flag that scan should start
             st.session_state.stop_scan = False
+            st.session_state.tabs_shown = False  # Reset for new scan
             st.rerun()
 
         # Progress section and scan execution (only when scan_triggered is True)
@@ -1078,54 +1094,59 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
             if st.session_state.stop_scan:
                 raise KeyboardInterrupt("Scan stopped by user")
 
-            if total > 0:
-                progress = current / total
-                pinata_position = int(progress * 100)
+            try:
+                if total > 0:
+                    progress = current / total
+                    pinata_position = int(progress * 100)
 
-                # Create combined progress bar and pinata overlay
-                combined_html = f"""
-                <div style="position: relative; width: 100%; margin-bottom: 5px;">
-                    <div style="
-                        width: 100%;
-                        height: 8px;
-                        background: linear-gradient(90deg,
-                            #667eea 0%,
-                            #764ba2 14%,
-                            #f093fb 28%,
-                            #f5576c 42%,
-                            #feca57 57%,
-                            #48dbfb 71%,
-                            #0abde3 85%,
-                            #00d2d3 100%
-                        );
-                        border-radius: 4px;
-                        overflow: hidden;
-                        position: relative;
-                    ">
+                    # Create combined progress bar and pinata overlay
+                    combined_html = f"""
+                    <div style="position: relative; width: 100%; margin-bottom: 5px;">
+                        <div style="
+                            width: 100%;
+                            height: 8px;
+                            background: linear-gradient(90deg,
+                                #667eea 0%,
+                                #764ba2 14%,
+                                #f093fb 28%,
+                                #f5576c 42%,
+                                #feca57 57%,
+                                #48dbfb 71%,
+                                #0abde3 85%,
+                                #00d2d3 100%
+                            );
+                            border-radius: 4px;
+                            overflow: hidden;
+                            position: relative;
+                        ">
+                            <div style="
+                                position: absolute;
+                                right: 0;
+                                width: {100 - pinata_position}%;
+                                height: 100%;
+                                background: #f0f0f0;
+                                transition: width 0.3s ease-out;
+                            "></div>
+                        </div>
                         <div style="
                             position: absolute;
-                            right: 0;
-                            width: {100 - pinata_position}%;
-                            height: 100%;
-                            background: #f0f0f0;
-                            transition: width 0.3s ease-out;
-                        "></div>
+                            left: {pinata_position}%;
+                            top: 4px;
+                            transform: translateX(-50%) translateY(-50%) scaleX(-1);
+                            font-size: 28px;
+                            transition: left 0.3s ease-out;
+                            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+                        ">🪅</div>
                     </div>
-                    <div style="
-                        position: absolute;
-                        left: {pinata_position}%;
-                        top: 4px;
-                        transform: translateX(-50%) translateY(-50%) scaleX(-1);
-                        font-size: 28px;
-                        transition: left 0.3s ease-out;
-                        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
-                    ">🪅</div>
-                </div>
-                """
-                progress_placeholder.markdown(combined_html, unsafe_allow_html=True)
+                    """
+                    progress_placeholder.markdown(combined_html, unsafe_allow_html=True)
 
-            # Show status in a more compact way
-            status_placeholder.markdown(f"<small>{message}</small>", unsafe_allow_html=True)
+                # Show status in a more compact way
+                status_placeholder.markdown(f"<small>{message}</small>", unsafe_allow_html=True)
+            except Exception as e:
+                # Silently ignore WebSocket errors during progress updates
+                # These happen when the browser disconnects/reconnects
+                pass
 
         # Scan repository with progress updates
         status_placeholder.markdown("<small>🔍 Starting repository scan...</small>", unsafe_allow_html=True)
@@ -1147,11 +1168,14 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
 
         st.success(f"✅ Scan complete! Scanned {result.files_scanned:,} files and found {len(result.graph.nodes):,} workflow nodes!")
 
-        # Reset scan state and trigger rerun to show tabs
-        # scan_triggered is already False, so this won't cause duplicate execution
+        # Reset scan state
         st.session_state.scan_running = False
-        st.session_state.scan_complete_flag = True
-        st.rerun()
+        st.session_state.scan_triggered = False
+
+        # Rerun ONCE to show the tabs (only if we haven't shown them yet for this scan)
+        if not st.session_state.tabs_shown:
+            st.session_state.tabs_shown = True
+            st.rerun()
 
     except KeyboardInterrupt as e:
         # Graceful stop requested by user
@@ -1159,7 +1183,6 @@ def scan_repository(repo_path, extensions, detect_db, detect_api, detect_files, 
         status_placeholder.empty()
         st.session_state.scan_running = False
         st.warning(f"⏹️ Scan stopped by user")
-        st.rerun()
 
     except Exception as e:
         progress_placeholder.empty()
