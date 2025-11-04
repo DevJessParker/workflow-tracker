@@ -272,6 +272,7 @@ export default function ScannerPage() {
       nodes_found: update.nodes_found || 0,
       eta: update.eta,
       total_files: update.total_files,
+      analysis_steps: update.analysis_steps,
     })
 
     // Handle completion

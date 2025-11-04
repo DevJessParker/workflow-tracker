@@ -235,6 +235,13 @@ async def run_scan(scan_id: str, request: ScanRequest):
             {"name": "Analyzing Dependencies", "status": "pending", "progress": 0, "icon": "📦"},
         ]
 
+        # Send initial analysis state
+        print(f"[{scan_id}] 📊 Starting analysis phase with {len(analysis_steps)} steps...")
+        await publish_progress(
+            redis, scan_id, "analyzing", 100.0, "Starting analysis...",
+            result.files_scanned, len(result.graph.nodes), total_files_estimate, analysis_steps
+        )
+
         # Helper function to update analysis step progress
         async def update_analysis_step(step_index: int, status: str, progress: int):
             analysis_steps[step_index]["status"] = status
