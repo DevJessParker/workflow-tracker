@@ -64,7 +64,33 @@ interface ScanResults {
   errors: string[]
 }
 
-type TabType = 'overview' | 'workflows' | 'nodes' | 'database' | 'api'
+type TabType = 'overview' | 'workflows' | 'nodes' | 'database' | 'api' | 'tables'
+
+interface DatabaseTable {
+  table_name: string
+  read_count: number
+  write_count: number
+  schema_file: string | null
+  schema_line: number | null
+  migrations: Array<{
+    file_path: string
+    migration_name: string
+    timestamp: string
+    changes: string[]
+  }>
+  schema: {
+    columns: Record<string, {
+      name: string
+      data_type: string
+      nullable: boolean
+      primary_key: boolean
+      foreign_key: string | null
+      default: string | null
+    }>
+    indexes: string[]
+    relationships: string[]
+  }
+}
 
 export default function ScanDetailPage() {
   const params = useParams()
@@ -76,6 +102,8 @@ export default function ScanDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [selectedWorkflow, setSelectedWorkflow] = useState<UIWorkflow | null>(null)
+  const [databaseTables, setDatabaseTables] = useState<Record<string, DatabaseTable> | null>(null)
+  const [loadingTables, setLoadingTables] = useState(false)
 
   useEffect(() => {
     if (scanId) {
@@ -119,6 +147,32 @@ export default function ScanDetailPage() {
       })
     } catch (err) {
       console.error('Failed to mark scan as viewed:', err)
+    }
+  }
+
+  const loadDatabaseTables = async () => {
+    if (databaseTables) return // Already loaded
+
+    try {
+      setLoadingTables(true)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/api/v1/scanner/scan/${scanId}/database-tables`)
+
+      if (response.ok) {
+        const data = await response.json()
+        setDatabaseTables(data.tables)
+      }
+    } catch (err) {
+      console.error('Failed to load database tables:', err)
+    } finally {
+      setLoadingTables(false)
+    }
+  }
+
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab)
+    if (tab === 'tables') {
+      loadDatabaseTables()
     }
   }
 
@@ -465,6 +519,166 @@ export default function ScanDetailPage() {
     )
   }
 
+  const renderTablesTab = () => {
+    if (loadingTables) {
+      return (
+        <div className="flex justify-center py-12">
+          <PinataSpinner size="lg" message="Loading database tables..." />
+        </div>
+      )
+    }
+
+    if (!databaseTables || Object.keys(databaseTables).length === 0) {
+      return (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">🗄️</div>
+          <p className="text-gray-600">No database tables detected in this scan</p>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-6">
+        {Object.entries(databaseTables).map(([tableName, table]) => (
+          <div key={tableName} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            {/* Table Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">{table.table_name}</h3>
+                  {table.schema_file && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      📄 {table.schema_file}:{table.schema_line}
+                    </p>
+                  )}
+                </div>
+                <div className="flex space-x-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{table.read_count}</div>
+                    <div className="text-xs text-gray-600">Reads</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{table.write_count}</div>
+                    <div className="text-xs text-gray-600">Writes</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Migrations */}
+              {table.migrations && table.migrations.length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-3">
+                    📝 Migrations ({table.migrations.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {table.migrations.map((migration, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{migration.migration_name}</p>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {migration.file_path.split('/').pop()}
+                            </p>
+                          </div>
+                          <span className="text-xs text-gray-500 font-mono">
+                            {migration.timestamp}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {migration.changes.map((change, cidx) => (
+                            <span key={cidx} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
+                              {change}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Current Schema */}
+              {table.schema && Object.keys(table.schema.columns).length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-3">
+                    🔑 Current Schema (Post-Migrations)
+                  </h4>
+                  <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                    <pre className="text-sm text-green-400 font-mono">
+                      {JSON.stringify(table.schema, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Columns Table */}
+              {table.schema && Object.keys(table.schema.columns).length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-3">
+                    📋 Columns ({Object.keys(table.schema.columns).length})
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Column Name
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Data Type
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Constraints
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Foreign Key
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {Object.entries(table.schema.columns).map(([colName, col]) => (
+                          <tr key={colName}>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              {col.name}
+                              {col.primary_key && (
+                                <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">
+                                  PK
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              <span className="font-mono">{col.data_type}</span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {col.nullable ? (
+                                <span className="text-gray-400">Nullable</span>
+                              ) : (
+                                <span className="text-red-600 font-medium">NOT NULL</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {col.foreign_key ? (
+                                <span className="text-blue-600">{col.foreign_key}</span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -522,13 +736,14 @@ export default function ScanDetailPage() {
           {[
             { id: 'overview', label: 'Overview', icon: '📊' },
             { id: 'workflows', label: 'UI Workflows', icon: '🔄' },
+            { id: 'tables', label: 'Database Tables', icon: '🗄️' },
             { id: 'nodes', label: 'All Nodes', icon: '🔍' },
             { id: 'database', label: 'Database', icon: '💾' },
             { id: 'api', label: 'API Endpoints', icon: '🌐' },
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as TabType)}
+              onClick={() => handleTabChange(tab.id as TabType)}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-600'
@@ -546,6 +761,7 @@ export default function ScanDetailPage() {
       <div>
         {activeTab === 'overview' && renderOverviewTab()}
         {activeTab === 'workflows' && renderWorkflowsTab()}
+        {activeTab === 'tables' && renderTablesTab()}
         {activeTab === 'nodes' && renderNodesTab()}
         {activeTab === 'database' && renderDatabaseTab()}
         {activeTab === 'api' && renderApiTab()}

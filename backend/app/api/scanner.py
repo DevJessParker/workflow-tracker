@@ -22,6 +22,7 @@ sys.path.insert(0, str(SCANNER_DIR))
 from graph.builder import WorkflowGraphBuilder
 from models import ScanResult as ScannerScanResult
 from workflow_analyzer import WorkflowAnalyzer
+from database_analyzer import DatabaseTableAnalyzer
 
 # Import backend services
 from app.models.scan import ScanMetadata, ScanListResponse, UnviewedCountResponse
@@ -226,6 +227,12 @@ async def run_scan(scan_id: str, request: ScanRequest):
         analyzer = WorkflowAnalyzer(result.graph)
         workflows = analyzer.analyze()
 
+        # Analyze database tables
+        print(f"[{scan_id}] 💾 Analyzing database tables...")
+        db_analyzer = DatabaseTableAnalyzer(result.graph, request.repo_path)
+        database_tables = db_analyzer.analyze()
+        database_tables_dict = db_analyzer.to_dict()
+
         # Save results to disk
         output_dir = Path(f'/tmp/scans/{scan_id}')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -290,6 +297,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
                 }
                 for wf in workflows
             ],
+            'database_tables': database_tables_dict,
             'scan_time_seconds': result.scan_time_seconds,
             'scan_duration': result.scan_time_seconds,  # Alias for frontend compatibility
             'errors': result.errors,
@@ -299,6 +307,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
             json.dump(result_json, f, indent=2)
 
         print(f"[{scan_id}] ✅ Found {len(workflows)} UI workflows")
+        print(f"[{scan_id}] ✅ Analyzed {len(database_tables_dict)} database tables")
 
         # Complete scan
         await publish_progress(
@@ -663,3 +672,23 @@ async def mark_scan_as_viewed(scan_id: str):
         raise HTTPException(status_code=404, detail="Scan not found")
 
     return {"success": True, "scan_id": scan_id, "viewed": True}
+
+
+@router.get("/scan/{scan_id}/database-tables")
+async def get_database_tables(scan_id: str):
+    """Get database table analysis for a scan"""
+    results_file = Path(f'/tmp/scans/{scan_id}/results.json')
+
+    if not results_file.exists():
+        raise HTTPException(status_code=404, detail="Scan results not found")
+
+    with open(results_file, 'r') as f:
+        results = json.load(f)
+
+    database_tables = results.get('database_tables', {})
+
+    return {
+        'scan_id': scan_id,
+        'tables': database_tables,
+        'table_count': len(database_tables)
+    }
