@@ -139,7 +139,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
     try:
         # Update status to discovering
         await publish_progress(
-            redis, scan_id, "discovering", 0.0, "Discovering files...", 0, 0
+            redis, scan_id, "discovering", 0.0, "Discovering files...", 0, 0, 0
         )
 
         # Create scanner configuration
@@ -186,7 +186,8 @@ async def run_scan(scan_id: str, request: ScanRequest):
             asyncio.run_coroutine_threadsafe(
                 publish_progress(
                     redis, scan_id, "scanning", progress_pct,
-                    message, current, current * 3  # Rough estimate of nodes
+                    message, current, current * 3,  # Rough estimate of nodes
+                    total  # Total files discovered
                 ),
                 loop
             )
@@ -281,7 +282,8 @@ async def run_scan(scan_id: str, request: ScanRequest):
         # Complete scan
         await publish_progress(
             redis, scan_id, "completed", 100.0,
-            f"Scan completed successfully", result.files_scanned, len(result.graph.nodes)
+            f"Scan completed successfully", result.files_scanned, len(result.graph.nodes),
+            total_files_estimate
         )
 
         print(f"[{scan_id}] ✅ Scan completed: {result.files_scanned} files, {len(result.graph.nodes)} nodes")
@@ -291,7 +293,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
         import traceback
         traceback.print_exc()
         await publish_progress(
-            redis, scan_id, "error", 0.0, f"Scan failed: {str(e)}", 0, 0
+            redis, scan_id, "error", 0.0, f"Scan failed: {str(e)}", 0, 0, 0
         )
 
 
@@ -303,6 +305,7 @@ async def publish_progress(
     message: str,
     files_scanned: int,
     nodes_found: int,
+    total_files: int = None,
 ):
     """Publish scan progress to Redis"""
     scan_status = {
@@ -313,7 +316,7 @@ async def publish_progress(
         "files_scanned": files_scanned,
         "nodes_found": nodes_found,
         "eta": None,
-        "total_files": None,
+        "total_files": total_files,
     }
 
     # Store in Redis

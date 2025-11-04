@@ -516,7 +516,6 @@ export default function ScannerPage() {
               <div className="bg-white rounded-lg shadow p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    <span className="text-3xl animate-bounce">🪅</span>
                     <div>
                       <h2 className="text-xl font-bold text-gray-900">
                         {scanStatus.status === 'initializing' && 'Initializing...'}
@@ -542,16 +541,32 @@ export default function ScannerPage() {
 
                 {/* Progress Bar */}
                 <div className="mb-4">
-                  <div className="relative w-full bg-gray-200 rounded-full h-6 overflow-hidden shadow-inner">
+                  <div className="relative w-full h-6 overflow-visible">
+                    {/* Full rainbow background (hidden) */}
+                    <div className="absolute inset-0 bg-gray-200 rounded-full shadow-inner"></div>
+
+                    {/* Revealed rainbow as progress advances */}
                     <div
-                      className="h-6 rounded-full transition-all duration-500 ease-out relative"
+                      className="absolute left-0 top-0 h-6 rounded-full transition-all duration-500 ease-out"
                       style={{
                         width: `${scanStatus.progress}%`,
                         background: 'linear-gradient(90deg, #667eea 0%, #764ba2 14%, #f093fb 28%, #f5576c 42%, #feca57 57%, #48dbfb 71%, #0abde3 85%, #00d2d3 100%)',
+                        backgroundSize: `${100 / (scanStatus.progress || 1) * 100}% 100%`,
+                        backgroundPosition: '0% 0%',
                         boxShadow: '0 2px 8px rgba(102, 126, 234, 0.4)'
                       }}
                     >
-                      <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
+                      {/* Pinata at the tip of progress bar */}
+                      {scanStatus.progress > 2 && (
+                        <div
+                          className="absolute -right-3 -top-1 text-3xl transition-all duration-500"
+                          style={{
+                            transform: 'scaleX(-1)'  // Flip horizontally to face right
+                          }}
+                        >
+                          🪅
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
