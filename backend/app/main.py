@@ -7,6 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
+import redis.asyncio as aioredis
+
+# Import API routes
+from app.api.scanner import router as scanner_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -16,6 +20,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Include API routers
+app.include_router(scanner_router)
 
 # CORS middleware
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -73,6 +80,18 @@ async def startup_event():
     print("🪅 Pinata Code Backend starting...")
     print(f"📊 Environment: {os.getenv('ENVIRONMENT', 'development')}")
     print(f"🔗 CORS origins: {CORS_ORIGINS}")
+
+    # Test Redis connection
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        redis = await aioredis.from_url(redis_url, decode_responses=True)
+        redis_info = await redis.info("server")
+        client_list = await redis.client_list()
+        print(f"📡 Redis: Connected ({redis_info['redis_version']} - {len(client_list)} clients)")
+        await redis.close()
+    except Exception as e:
+        print(f"❌ Redis: Connection failed - {e}")
+
     print("✅ Backend ready!")
 
 
@@ -81,3 +100,9 @@ async def startup_event():
 async def shutdown_event():
     """Run on application shutdown"""
     print("🛑 Pinata Code Backend shutting down...")
+
+    # Close Redis connection
+    from app.api.scanner import redis_client
+    if redis_client:
+        await redis_client.close()
+        print("📡 Redis: Connection closed")
