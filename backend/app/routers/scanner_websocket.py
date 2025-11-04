@@ -239,6 +239,46 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
         logger.info(f"[{scan_id}] ✅ Cleanup complete")
 
 
+@router.get("/ws/health")
+async def websocket_health():
+    """
+    WebSocket health check endpoint
+
+    Tests Redis connectivity and returns status.
+    Frontend should call this before starting scans.
+    """
+    try:
+        # Create test Redis client
+        redis_client = aioredis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            db=REDIS_DB,
+            decode_responses=True,
+            socket_connect_timeout=2
+        )
+
+        # Test connection
+        await redis_client.ping()
+        await redis_client.close()
+
+        return {
+            "status": "healthy",
+            "websocket_available": True,
+            "redis_connected": True,
+            "message": "WebSocket service is ready",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"WebSocket health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "websocket_available": False,
+            "redis_connected": False,
+            "message": f"WebSocket service unavailable: {str(e)}",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
 @router.get("/ws/scan/{scan_id}/connections")
 async def get_connection_count(scan_id: str):
     """

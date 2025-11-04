@@ -87,6 +87,8 @@ export default function ScannerPage() {
   const [scanResults, setScanResults] = useState<ScanResults | null>(null)
   const [diagram, setDiagram] = useState<string | null>(null)
   const [wsConnectionStatus, setWsConnectionStatus] = useState<ConnectionStatus>('disconnected')
+  const [wsHealthy, setWsHealthy] = useState<boolean | null>(null) // null = checking, true = healthy, false = unhealthy
+  const [wsHealthMessage, setWsHealthMessage] = useState<string>('')
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   const WS_URL = API_URL.replace('http://', 'ws://').replace('https://', 'wss://')
@@ -104,7 +106,35 @@ export default function ScannerPage() {
 
     // Load environment info
     loadEnvironment()
+
+    // Check WebSocket health on load
+    checkWebSocketHealth()
+
+    // Check WebSocket health every 10 seconds
+    const healthCheckInterval = setInterval(checkWebSocketHealth, 10000)
+
+    return () => clearInterval(healthCheckInterval)
   }, [router])
+
+  const checkWebSocketHealth = async () => {
+    try {
+      const response = await fetch(`${API_URL}/ws/health`)
+      const data = await response.json()
+
+      if (data.websocket_available && data.redis_connected) {
+        setWsHealthy(true)
+        setWsHealthMessage('WebSocket service is ready')
+      } else {
+        setWsHealthy(false)
+        setWsHealthMessage(data.message || 'WebSocket service unavailable')
+        console.error('WebSocket health check failed:', data)
+      }
+    } catch (error) {
+      setWsHealthy(false)
+      setWsHealthMessage('Cannot connect to WebSocket service')
+      console.error('Failed to check WebSocket health:', error)
+    }
+  }
 
   const loadEnvironment = async () => {
     try {
@@ -132,6 +162,17 @@ export default function ScannerPage() {
   }
 
   const startScan = async () => {
+    // Check WebSocket health before starting
+    if (wsHealthy === false) {
+      alert('❌ Cannot start scan: WebSocket service is not available.\n\n' + wsHealthMessage)
+      return
+    }
+
+    if (wsHealthy === null) {
+      alert('⏳ Please wait - checking WebSocket service availability...')
+      return
+    }
+
     try {
       setScanning(true)
       setScanResults(null)
@@ -434,17 +475,52 @@ export default function ScannerPage() {
                 </div>
               </div>
 
+              {/* WebSocket Status Indicator */}
+              {wsHealthy === false && (
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-red-600 font-semibold">❌ WebSocket Unavailable</span>
+                  </div>
+                  <p className="text-sm text-red-600 mt-1">{wsHealthMessage}</p>
+                  <button
+                    onClick={checkWebSocketHealth}
+                    className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+                  >
+                    🔄 Retry Connection
+                  </button>
+                </div>
+              )}
+
+              {wsHealthy === null && (
+                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-yellow-600 font-semibold">⏳ Checking WebSocket...</span>
+                  </div>
+                </div>
+              )}
+
+              {wsHealthy === true && !scanning && (
+                <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-green-600 font-semibold">✅ Real-time updates ready</span>
+                  </div>
+                </div>
+              )}
+
               {/* Start Scan Button */}
               <button
                 className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors ${
-                  scanning || !config.repoPath
+                  scanning || !config.repoPath || wsHealthy !== true
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-purple-600 hover:bg-purple-700'
                 }`}
                 onClick={startScan}
-                disabled={scanning || !config.repoPath}
+                disabled={scanning || !config.repoPath || wsHealthy !== true}
               >
-                {scanning ? '⏳ Scanning...' : '🔍 Start Scan'}
+                {scanning ? '⏳ Scanning...' :
+                 wsHealthy === false ? '❌ WebSocket Unavailable' :
+                 wsHealthy === null ? '⏳ Checking Connection...' :
+                 '🔍 Start Scan'}
               </button>
             </div>
           </div>
