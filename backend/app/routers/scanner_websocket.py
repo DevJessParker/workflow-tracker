@@ -200,6 +200,16 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
         # Wait for either task to complete/fail
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
+        # Retrieve exceptions from completed tasks to avoid "exception was never retrieved" warnings
+        for task in done:
+            try:
+                task.result()  # This will re-raise any exception
+            except (WebSocketDisconnect, asyncio.CancelledError):
+                # Expected exceptions - client disconnected or task was cancelled
+                pass
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Task error: {e}")
+
         # Cancel remaining tasks
         for task in pending:
             task.cancel()
