@@ -229,7 +229,8 @@ export function useScanWebSocket({
     return () => {
       disconnect()
     }
-  }, [enabled, scanId, connect, disconnect])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, scanId])  // Remove connect/disconnect from deps to prevent reconnect loop
 
   return {
     connectionStatus,

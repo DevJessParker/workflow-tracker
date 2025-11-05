@@ -13,7 +13,10 @@ from typing import Dict, Set, Optional
 from datetime import datetime
 import redis.asyncio as aioredis
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
@@ -104,7 +107,14 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
         websocket: WebSocket connection
         scan_id: Unique identifier for the scan to monitor
     """
-    await manager.connect(websocket, scan_id)
+    logger.info(f"[{scan_id}] 🔌 New WebSocket connection request")
+
+    try:
+        await manager.connect(websocket, scan_id)
+        logger.info(f"[{scan_id}] ✅ WebSocket accepted and connected")
+    except Exception as e:
+        logger.error(f"[{scan_id}] ❌ Failed to accept WebSocket: {e}")
+        raise
 
     # Get async Redis client
     redis = await get_async_redis()
@@ -189,6 +199,16 @@ async def scan_websocket(websocket: WebSocket, scan_id: str):
 
         # Wait for either task to complete/fail
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+        # Retrieve exceptions from completed tasks to avoid "exception was never retrieved" warnings
+        for task in done:
+            try:
+                task.result()  # This will re-raise any exception
+            except (WebSocketDisconnect, asyncio.CancelledError):
+                # Expected exceptions - client disconnected or task was cancelled
+                pass
+            except Exception as e:
+                logger.error(f"[{scan_id}] ❌ Task error: {e}")
 
         # Cancel remaining tasks
         for task in pending:
