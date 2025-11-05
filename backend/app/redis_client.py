@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Redis connection configuration
-REDIS_HOST = os.getenv('REDIS_HOST', 'pinata-redis')
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_DB = int(os.getenv('REDIS_DB', '0'))
 
