@@ -326,7 +326,13 @@ async def run_scan(scan_id: str, request: ScanRequest):
         # Publish initial status to Redis
         publish_scan_update(scan_id, SCAN_STATUS[scan_id])
 
-        result = builder.build(request.repo_path, progress_callback=update_progress)
+        # Run synchronous scan in executor to avoid blocking the event loop
+        # This allows WebSocket and Redis pub/sub to continue working during the scan
+        result = await asyncio.to_thread(
+            builder.build,
+            request.repo_path,
+            progress_callback=update_progress
+        )
 
         # Store results
         SCAN_RESULTS[scan_id] = result
